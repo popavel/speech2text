@@ -1,0 +1,26 @@
+name: Speech2Text
+options:
+  bundleIdPrefix: com.speech2text
+  deploymentTarget:
+    macOS: "14.0"
+  groupSortPosition: top
+packages:
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit.git
+    branch: main
+targets:
+  Speech2Text:
+    type: application
+    platform: macOS
+    sources: [Speech2Text]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.app
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: Info.plist
+        CODE_SIGN_ENTITLEMENTS: Speech2Text.entitlements
+        SWIFT_VERSION: "6.0"
+    dependencies:
+      - package: WhisperKit
+        product: WhisperKit
