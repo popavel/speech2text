@@ -20,6 +20,7 @@
 		3668312EB0D98FBE6AACB6FF /* Speech2Text.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Speech2Text.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		81462A0C2F9A90F000CC015F /* project.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = project.yml; sourceTree = "<group>"; };
 		81462A0D2F9A914D00CC015F /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		81462A0E2F9A961700CC015F /* ci.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = ci.yml; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -37,6 +38,7 @@
 		D5BA898BE9227EE78CA5F5A0 = {
 			isa = PBXGroup;
 			children = (
+				81462A0E2F9A961700CC015F /* ci.yml */,
 				81462A0D2F9A914D00CC015F /* .gitignore */,
 				81462A0C2F9A90F000CC015F /* project.yml */,
 				FC91814D84CB100BE2B3A4FC /* Speech2Text */,

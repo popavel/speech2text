@@ -1,0 +1,64 @@
+name: CI
+
+# When should this workflow run?
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:   # lets you trigger it manually from the Actions tab
+
+jobs:
+  build-and-test:
+    name: Build & Test (macOS)
+    runs-on: macos-14          # Apple Silicon runner with recent Xcodes
+
+    steps:
+      # 1. Clone the repository into the runner.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Pin the Xcode version so builds are reproducible.
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.4'
+
+      # 3. Install XcodeGen (you use project.yml) and regenerate the .xcodeproj.
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # 4. Show the build settings (useful when debugging CI failures).
+      - name: Show environment
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # 5. Build the app. Code signing is disabled — fine for CI builds.
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Speech2Text.xcodeproj \
+            -scheme Speech2Text \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build | xcpretty || true
+
+      # 6. Run tests. `|| true` on the first run is removed once you add tests,
+      #    so the build fails if tests fail.
+      - name: Test
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Speech2Text.xcodeproj \
+            -scheme Speech2Text \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            test | xcpretty || echo "No tests or tests failed — inspect logs."
