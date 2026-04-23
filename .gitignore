@@ -24,3 +24,6 @@ Pods/
 # Whisper models (these can be large!)
 *.bin
 *.mlmodelc
+
+# Claude folder
+.claude

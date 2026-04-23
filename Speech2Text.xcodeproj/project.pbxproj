@@ -18,6 +18,8 @@
 		18BC5C2C8E4D6DFCEC77E399 /* TranscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionManager.swift; sourceTree = "<group>"; };
 		21AB074AFFC5D1AD1EE56710 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		3668312EB0D98FBE6AACB6FF /* Speech2Text.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Speech2Text.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		81462A0C2F9A90F000CC015F /* project.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = project.yml; sourceTree = "<group>"; };
+		81462A0D2F9A914D00CC015F /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -35,6 +37,8 @@
 		D5BA898BE9227EE78CA5F5A0 = {
 			isa = PBXGroup;
 			children = (
+				81462A0D2F9A914D00CC015F /* .gitignore */,
+				81462A0C2F9A90F000CC015F /* project.yml */,
 				FC91814D84CB100BE2B3A4FC /* Speech2Text */,
 				F787F08E4B0A84C91C437043 /* Products */,
 			);
@@ -88,8 +92,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = E71D495962FA130B42171A73 /* Build configuration list for PBXProject "Speech2Text" */;
 			developmentRegion = en;
