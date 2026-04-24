@@ -22,7 +22,7 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '15.4'
+          xcode-version: '26.4.1'
 
       # 3. Install XcodeGen (you use project.yml) and regenerate the .xcodeproj.
       - name: Install XcodeGen
