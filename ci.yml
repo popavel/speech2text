@@ -11,7 +11,7 @@ on:
 jobs:
   build-and-test:
     name: Build & Test (macOS)
-    runs-on: macos-14          # Apple Silicon runner with recent Xcodes
+    runs-on: macos-26          # Apple Silicon runner with recent Xcodes
 
     steps:
       # 1. Clone the repository into the runner.
