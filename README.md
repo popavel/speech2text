@@ -1,3 +1,6 @@
+[![CI](https://github.com/popavel/speech2text/actions/workflows/ci.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/ci.yml)
+
+
 # Speech2Text
 
 A native macOS app for offline speech-to-text transcription of audio and video files, 
