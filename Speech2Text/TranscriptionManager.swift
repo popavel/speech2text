@@ -245,11 +245,9 @@ class TranscriptionManager {
             throw TranscriptionError.audioExtractionFailed
         }
 
-        session.outputURL = outputURL
-        session.outputFileType = .m4a
-        await session.export()
-
-        guard session.status == .completed else {
+        do {
+            try await session.export(to: outputURL, as: .m4a)
+        } catch {
             throw TranscriptionError.audioExtractionFailed
         }
 
