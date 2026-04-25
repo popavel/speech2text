@@ -7,6 +7,6 @@
 	<key>CFBundleName</key>
 	<string>Speech2Text</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>14.0</string>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 </dict>
 </plist>
