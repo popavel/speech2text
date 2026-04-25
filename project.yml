@@ -2,7 +2,7 @@ name: Speech2Text
 options:
   bundleIdPrefix: com.speech2text
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "26.0"
   groupSortPosition: top
 packages:
   WhisperKit:
