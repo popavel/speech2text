@@ -3,9 +3,7 @@ name: CI
 # When should this workflow run?
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
   workflow_dispatch:   # lets you trigger it manually from the Actions tab
 
 jobs:
