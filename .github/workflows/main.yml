@@ -1,4 +1,4 @@
-name: CI
+name: Main
 
 # When should this workflow run?
 on:
