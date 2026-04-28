@@ -1,9 +1,8 @@
-| Workflow | Branch pattern | Status |
-| --- | --- | --- |
-| Release | `release/**` | [![Release](https://github.com/popavel/speech2text/actions/workflows/release.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/release.yml) |
-| Main | `main` | [![Main](https://github.com/popavel/speech2text/actions/workflows/main.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/main.yml) |
-| Feature | `feature/**` | [![Feature](https://github.com/popavel/speech2text/actions/workflows/feature.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/feature.yml) |
-
+| Status | Branch pattern |
+| --- | --- |
+| [![Release](https://github.com/popavel/speech2text/actions/workflows/release.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/release.yml) | `release/**` |
+| [![Main](https://github.com/popavel/speech2text/actions/workflows/main.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/main.yml) | `main` |
+| [![Feature](https://github.com/popavel/speech2text/actions/workflows/feature.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/feature.yml) | `feature/**` |
 
 # Speech2Text
 
