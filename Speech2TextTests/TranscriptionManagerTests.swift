@@ -1,0 +1,232 @@
+import Foundation
+import Testing
+
+@testable import Speech2Text
+
+// MARK: - TranscriptionLanguage
+
+@Suite("TranscriptionLanguage")
+struct TranscriptionLanguageTests {
+    @Test("All cases have a non-empty display name")
+    func displayNamesAreNonEmpty() {
+        for language in TranscriptionLanguage.allCases {
+            #expect(!language.displayName.isEmpty)
+        }
+    }
+
+    @Test("IDs are unique across cases")
+    func idsAreUnique() {
+        let ids = TranscriptionLanguage.allCases.map(\.id)
+        #expect(Set(ids).count == ids.count)
+    }
+
+    @Test("Auto-detect uses an empty raw value")
+    func autoHasEmptyRawValue() {
+        #expect(TranscriptionLanguage.auto.rawValue == "")
+    }
+
+    @Test("Non-auto cases use ISO 639-1 codes")
+    func nonAutoCasesUseISOCodes() {
+        for language in TranscriptionLanguage.allCases where language != .auto {
+            #expect(language.rawValue.count == 2)
+        }
+    }
+}
+
+// MARK: - WhisperModel
+
+@Suite("WhisperModel")
+struct WhisperModelTests {
+    @Test("All cases have a non-empty display name")
+    func displayNamesAreNonEmpty() {
+        for model in WhisperModel.allCases {
+            #expect(!model.displayName.isEmpty)
+        }
+    }
+
+    @Test("Raw values use the openai_whisper- prefix")
+    func rawValuesUsePrefix() {
+        for model in WhisperModel.allCases {
+            #expect(model.rawValue.hasPrefix("openai_whisper-"))
+        }
+    }
+}
+
+// MARK: - TranscriptionStatus
+
+@Suite("TranscriptionStatus")
+struct TranscriptionStatusTests {
+    @Test("idle equals idle")
+    func idleEquality() {
+        #expect(TranscriptionStatus.idle == .idle)
+    }
+
+    @Test("transcribing equality is driven by progress")
+    func transcribingEquality() {
+        #expect(TranscriptionStatus.transcribing(progress: 0.5) == .transcribing(progress: 0.5))
+        #expect(TranscriptionStatus.transcribing(progress: 0.5) != .transcribing(progress: 0.6))
+    }
+
+    @Test("error equality is driven by message")
+    func errorEquality() {
+        #expect(TranscriptionStatus.error("oops") == .error("oops"))
+        #expect(TranscriptionStatus.error("oops") != .error("other"))
+    }
+}
+
+// MARK: - TranscriptionError
+
+@Suite("TranscriptionError")
+struct TranscriptionErrorTests {
+    @Test("Each case provides a localized description")
+    func descriptionsAreProvided() {
+        #expect(TranscriptionError.noAudioTrack.errorDescription?.isEmpty == false)
+        #expect(TranscriptionError.audioExtractionFailed.errorDescription?.isEmpty == false)
+    }
+}
+
+// MARK: - TranscriptionManager
+
+@MainActor
+@Suite("TranscriptionManager")
+struct TranscriptionManagerTests {
+
+    // MARK: addFiles
+
+    @Test("Adds supported audio and video files")
+    func addsSupportedFiles() {
+        let manager = TranscriptionManager()
+        let urls = [
+            URL(fileURLWithPath: "/tmp/clip.mp3"),
+            URL(fileURLWithPath: "/tmp/movie.mp4"),
+            URL(fileURLWithPath: "/tmp/voice.wav"),
+        ]
+        manager.addFiles(urls)
+        #expect(manager.droppedFileURLs == urls)
+    }
+
+    @Test("Filters out unsupported extensions")
+    func filtersUnsupportedExtensions() {
+        let manager = TranscriptionManager()
+        manager.addFiles([
+            URL(fileURLWithPath: "/tmp/notes.txt"),
+            URL(fileURLWithPath: "/tmp/photo.jpg"),
+            URL(fileURLWithPath: "/tmp/clip.mp3"),
+        ])
+        #expect(manager.droppedFileURLs.map(\.lastPathComponent) == ["clip.mp3"])
+    }
+
+    @Test("Treats extensions case-insensitively")
+    func extensionsAreCaseInsensitive() {
+        let manager = TranscriptionManager()
+        manager.addFiles([
+            URL(fileURLWithPath: "/tmp/CLIP.MP3"),
+            URL(fileURLWithPath: "/tmp/Movie.MOV"),
+        ])
+        #expect(manager.droppedFileURLs.count == 2)
+    }
+
+    @Test("Does not add the same file twice")
+    func deduplicatesByPath() {
+        let manager = TranscriptionManager()
+        let url = URL(fileURLWithPath: "/tmp/clip.mp3")
+        manager.addFiles([url])
+        manager.addFiles([url])
+        #expect(manager.droppedFileURLs == [url])
+    }
+
+    // MARK: removeFile
+
+    @Test("Removes a file at a valid index")
+    func removesFileAtIndex() {
+        let manager = TranscriptionManager()
+        manager.addFiles([
+            URL(fileURLWithPath: "/tmp/a.mp3"),
+            URL(fileURLWithPath: "/tmp/b.mp3"),
+        ])
+        manager.removeFile(at: 0)
+        #expect(manager.droppedFileURLs.map(\.lastPathComponent) == ["b.mp3"])
+    }
+
+    @Test("Ignores out-of-range indices")
+    func ignoresOutOfRangeIndex() {
+        let manager = TranscriptionManager()
+        manager.addFiles([URL(fileURLWithPath: "/tmp/a.mp3")])
+        manager.removeFile(at: 5)
+        manager.removeFile(at: -1)
+        #expect(manager.droppedFileURLs.count == 1)
+    }
+
+    // MARK: clearFiles
+
+    @Test("Clears files, result, and resets status")
+    func clearFilesResetsState() {
+        let manager = TranscriptionManager()
+        manager.addFiles([URL(fileURLWithPath: "/tmp/a.mp3")])
+        manager.transcriptionResult = "hello"
+        manager.status = .completed
+        manager.clearFiles()
+        #expect(manager.droppedFileURLs.isEmpty)
+        #expect(manager.transcriptionResult.isEmpty)
+        #expect(manager.status == .idle)
+    }
+
+    // MARK: isProcessing / canTranscribe
+
+    @Test("isProcessing reflects loading and transcribing states")
+    func isProcessingReflectsStatus() {
+        let manager = TranscriptionManager()
+
+        manager.status = .idle
+        #expect(!manager.isProcessing)
+
+        manager.status = .loadingModel
+        #expect(manager.isProcessing)
+
+        manager.status = .transcribing(progress: 0.1)
+        #expect(manager.isProcessing)
+
+        manager.status = .completed
+        #expect(!manager.isProcessing)
+
+        manager.status = .error("nope")
+        #expect(!manager.isProcessing)
+    }
+
+    @Test("canTranscribe requires files and an idle pipeline")
+    func canTranscribeRequiresFilesAndIdle() {
+        let manager = TranscriptionManager()
+        #expect(!manager.canTranscribe)
+
+        manager.addFiles([URL(fileURLWithPath: "/tmp/a.mp3")])
+        #expect(manager.canTranscribe)
+
+        manager.status = .loadingModel
+        #expect(!manager.canTranscribe)
+    }
+
+    // MARK: statusMessage
+
+    @Test("statusMessage formats each status")
+    func statusMessageFormatting() {
+        let manager = TranscriptionManager()
+
+        manager.status = .idle
+        #expect(manager.statusMessage.isEmpty)
+
+        manager.status = .loadingModel
+        #expect(manager.statusMessage.contains("model"))
+
+        manager.status = .transcribing(progress: 0)
+        #expect(manager.statusMessage == "Transcribing...")
+
+        manager.status = .transcribing(progress: 0.42)
+        #expect(manager.statusMessage == "Transcribing... 42%")
+
+        manager.status = .completed
+        #expect(manager.statusMessage == "Transcription complete")
+
+        manager.status = .error("boom")
+        #expect(manager.statusMessage == "Error: boom")
+    }
+}
