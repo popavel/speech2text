@@ -9,15 +9,28 @@
 /* Begin PBXBuildFile section */
 		1CF2C1794677E41DC96E69AA /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21AB074AFFC5D1AD1EE56710 /* ContentView.swift */; };
 		397D9D4FF6646B0BEF155EA8 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6D66FC1E4DBAE5C023DB0F5D /* WhisperKit */; };
+		6588BBA074EF1F9318039BFE /* TranscriptionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BD5F2DD613FB74ED192E9E /* TranscriptionManagerTests.swift */; };
 		6B8951BC38B682BE761089B0 /* TranscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18BC5C2C8E4D6DFCEC77E399 /* TranscriptionManager.swift */; };
 		9842F6E9AB5C932CECD3DC99 /* Speech2TextApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0550083328F5CD9C15E2E33D /* Speech2TextApp.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1FE2EA4710B9AA97FC7D58DE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 3726EC8B2D76F11A5C328567 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 71A5D77E122F42FE5E68318B;
+			remoteInfo = Speech2Text;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		0550083328F5CD9C15E2E33D /* Speech2TextApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speech2TextApp.swift; sourceTree = "<group>"; };
 		18BC5C2C8E4D6DFCEC77E399 /* TranscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionManager.swift; sourceTree = "<group>"; };
 		21AB074AFFC5D1AD1EE56710 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		3668312EB0D98FBE6AACB6FF /* Speech2Text.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Speech2Text.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2BE429EBEFC2DB8C0617D82 /* Speech2TextTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Speech2TextTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B3BD5F2DD613FB74ED192E9E /* TranscriptionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionManagerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -32,10 +45,19 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		9D452FF7FFF7E69D91B11D2F /* Speech2TextTests */ = {
+			isa = PBXGroup;
+			children = (
+				B3BD5F2DD613FB74ED192E9E /* TranscriptionManagerTests.swift */,
+			);
+			path = Speech2TextTests;
+			sourceTree = "<group>";
+		};
 		D5BA898BE9227EE78CA5F5A0 = {
 			isa = PBXGroup;
 			children = (
 				FC91814D84CB100BE2B3A4FC /* Speech2Text */,
+				9D452FF7FFF7E69D91B11D2F /* Speech2TextTests */,
 				F787F08E4B0A84C91C437043 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -44,6 +66,7 @@
 			isa = PBXGroup;
 			children = (
 				3668312EB0D98FBE6AACB6FF /* Speech2Text.app */,
+				A2BE429EBEFC2DB8C0617D82 /* Speech2TextTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -61,6 +84,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		1D8F52865BF04B82384899FF /* Speech2TextTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1B08DE0279562BB941541268 /* Build configuration list for PBXNativeTarget "Speech2TextTests" */;
+			buildPhases = (
+				4700906C824C4CD2F5465661 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8246770A307E204AF3B70C97 /* PBXTargetDependency */,
+			);
+			name = Speech2TextTests;
+			packageProductDependencies = (
+			);
+			productName = Speech2TextTests;
+			productReference = A2BE429EBEFC2DB8C0617D82 /* Speech2TextTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		71A5D77E122F42FE5E68318B /* Speech2Text */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F0E45919DB8A76A8435D7B8E /* Build configuration list for PBXNativeTarget "Speech2Text" */;
@@ -87,7 +128,9 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
 			};
 			buildConfigurationList = E71D495962FA130B42171A73 /* Build configuration list for PBXProject "Speech2Text" */;
 			developmentRegion = en;
@@ -107,11 +150,20 @@
 			projectRoot = "";
 			targets = (
 				71A5D77E122F42FE5E68318B /* Speech2Text */,
+				1D8F52865BF04B82384899FF /* Speech2TextTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		4700906C824C4CD2F5465661 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6588BBA074EF1F9318039BFE /* TranscriptionManagerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E257996FA55769636ACB13E4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -124,6 +176,14 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		8246770A307E204AF3B70C97 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 71A5D77E122F42FE5E68318B /* Speech2Text */;
+			targetProxy = 1FE2EA4710B9AA97FC7D58DE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
 		2D1A31AA90743FC2565BBBC6 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -132,7 +192,6 @@
 				CODE_SIGN_ENTITLEMENTS = Speech2Text.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -152,7 +211,6 @@
 				CODE_SIGN_ENTITLEMENTS = Speech2Text.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -162,6 +220,42 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.speech2text.app;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		3512ECE88A089D91C911FC7F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.speech2text.tests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Speech2Text.app/Contents/MacOS/Speech2Text";
+			};
+			name = Debug;
+		};
+		430ECCE0953873EF9489BDFB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.speech2text.tests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Speech2Text.app/Contents/MacOS/Speech2Text";
 			};
 			name = Release;
 		};
@@ -199,11 +293,9 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -217,7 +309,6 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -258,11 +349,9 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -283,7 +372,6 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -293,6 +381,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		1B08DE0279562BB941541268 /* Build configuration list for PBXNativeTarget "Speech2TextTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3512ECE88A089D91C911FC7F /* Debug */,
+				430ECCE0953873EF9489BDFB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		E71D495962FA130B42171A73 /* Build configuration list for PBXProject "Speech2Text" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
