@@ -1,8 +1,8 @@
 | Workflow | Branch pattern | Status |
 | --- | --- | --- |
-| Release | `release/**` | [![Release](https://github.com/popavel/speech2text/actions/workflows/cicd-release.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/release.yml) |
-| Main | `main` | [![Main](https://github.com/popavel/speech2text/actions/workflows/cicd-main.yml/badge.svg?branch=main)](https://github.com/popavel/speech2text/actions/workflows/main.yml) |
-| Feature | `feature/**` | [![Feature](https://github.com/popavel/speech2text/actions/workflows/ci.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/feature.yml) |
+| Release | `release/**` | [![Release](https://github.com/popavel/speech2text/actions/workflows/release.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/release.yml) |
+| Main | `main` | [![Main](https://github.com/popavel/speech2text/actions/workflows/main.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/main.yml) |
+| Feature | `feature/**` | [![Feature](https://github.com/popavel/speech2text/actions/workflows/feature.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/feature.yml) |
 
 
 # Speech2Text
