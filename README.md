@@ -1,4 +1,8 @@
-[![CI](https://github.com/popavel/speech2text/actions/workflows/ci.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/ci.yml)
+| Workflow | Branch pattern | Status |
+| --- | --- | --- |
+| Release | `release/**` | [![Release](https://github.com/popavel/speech2text/actions/workflows/cicd-release.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/release.yml) |
+| Main | `main` | [![Main](https://github.com/popavel/speech2text/actions/workflows/cicd-main.yml/badge.svg?branch=main)](https://github.com/popavel/speech2text/actions/workflows/main.yml) |
+| Feature | `feature/**` | [![Feature](https://github.com/popavel/speech2text/actions/workflows/ci.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/feature.yml) |
 
 
 # Speech2Text
@@ -87,8 +91,13 @@ ci.yml                         # GitHub Actions workflow
 
 ## CI
 
-A GitHub Actions workflow (`ci.yml`) builds and tests the app on a macOS runner using a pinned Xcode version. 
-Move it to `.github/workflows/ci.yml` to enable it on GitHub.
+GitHub Actions workflows live in `.github/workflows/`:
+
+- `release.yml` — runs on `release/**` branches
+- `main.yml` — builds & tests on pushes / PRs to `main`
+- `feature.yml` — runs on `feature/**` branches
+
+All three pin Xcode 26.4.1 on a `macos-26` runner and use the same build/test steps.
 
 ## License
 
