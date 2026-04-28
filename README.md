@@ -1,8 +1,12 @@
+<div align="center">
+
 | Status | Branch pattern |
-| --- | --- |
+| :--- | :--- |
 | [![Release](https://github.com/popavel/speech2text/actions/workflows/release.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/release.yml) | `release/**` |
 | [![Main](https://github.com/popavel/speech2text/actions/workflows/main.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/main.yml) | `main` |
 | [![Feature](https://github.com/popavel/speech2text/actions/workflows/feature.yml/badge.svg)](https://github.com/popavel/speech2text/actions/workflows/feature.yml) | `feature/**` |
+
+</div>
 
 # Speech2Text
 
