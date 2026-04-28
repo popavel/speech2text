@@ -1,4 +1,4 @@
-name: CI (feature)
+name: Feature
 
 # When should this workflow run?
 on:
