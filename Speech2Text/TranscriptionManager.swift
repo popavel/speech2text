@@ -132,7 +132,7 @@ class TranscriptionManager {
     ]
 
     nonisolated static let supportedVideoExtensions: Set<String> = [
-        "mp4", "mov", "avi", "mkv", "webm", "m4v", "wmv", "flv",
+        "mp4", "mov", "avi", "m4v",
     ]
 
     nonisolated private static let supportedExtensions: Set<String> =
