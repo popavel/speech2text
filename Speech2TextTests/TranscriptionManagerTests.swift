@@ -1,5 +1,7 @@
 import Foundation
 import Testing
+import AVFoundation
+import UniformTypeIdentifiers
 
 @testable import Speech2Text
 
@@ -228,5 +230,77 @@ struct TranscriptionManagerTests {
 
         manager.status = .error("boom")
         #expect(manager.statusMessage == "Error: boom")
+    }
+}
+
+// MARK: - Supported Extensions Validation
+
+@Suite("Supported Extensions")
+struct SupportedExtensionsTests {
+
+    @Test("App's audio extensions can be decoded by CoreAudio")
+    func audioExtensionsAreDecodable() throws {
+        for ext in TranscriptionManager.supportedAudioExtensions {
+            let utType = try #require(
+                UTType(filenameExtension: ext),
+                "No UTType found for audio extension '\(ext)'"
+            )
+            // CoreAudio can decode anything that conforms to public.audio
+            #expect(
+                utType.conforms(to: .audio),
+                "Extension '\(ext)' does not conform to public.audio — CoreAudio/WhisperKit cannot decode it"
+            )
+        }
+    }
+
+    @Test("App's video extensions can be opened by AVAssetExportSession")
+    func videoExtensionsAreExportable() throws {
+        let exportPresets = AVAssetExportSession.allExportPresets()
+        #expect(
+            exportPresets.contains(AVAssetExportPresetAppleM4A),
+            "AVAssetExportPresetAppleM4A is not available on this system"
+        )
+
+        for ext in TranscriptionManager.supportedVideoExtensions {
+            let utType = try #require(
+                UTType(filenameExtension: ext),
+                "No UTType found for video extension '\(ext)'"
+            )
+            // The app uses AVURLAsset to read these, so they must be audiovisual types
+            let avTypes = AVURLAsset.audiovisualTypes()
+            let isReadable = avTypes.contains { fileType in
+                guard let avUTType = UTType(fileType.rawValue) else { return false }
+                return utType.conforms(to: avUTType) || avUTType.conforms(to: utType)
+            }
+            #expect(
+                isReadable,
+                "Extension '\(ext)' cannot be read by AVURLAsset — extractAudio(from:) will fail"
+            )
+        }
+    }
+
+    @Test("Audio and video sets don't overlap")
+    func noOverlapBetweenSets() {
+        let overlap = TranscriptionManager.supportedAudioExtensions
+            .intersection(TranscriptionManager.supportedVideoExtensions)
+        #expect(overlap.isEmpty, "Extensions in both sets: \(overlap) — ambiguous code path")
+    }
+
+    @Test("addFiles accepts exactly the union of audio and video extensions")
+    @MainActor
+    func addFilesMatchesDeclaredExtensions() {
+        let manager = TranscriptionManager()
+        let allExtensions = TranscriptionManager.supportedAudioExtensions
+            .union(TranscriptionManager.supportedVideoExtensions)
+
+        for ext in allExtensions {
+            manager.addFiles([URL(fileURLWithPath: "/tmp/test.\(ext)")])
+        }
+        #expect(manager.droppedFileURLs.count == allExtensions.count)
+
+        // Verify a bogus extension is rejected
+        let before = manager.droppedFileURLs.count
+        manager.addFiles([URL(fileURLWithPath: "/tmp/test.xyz")])
+        #expect(manager.droppedFileURLs.count == before)
     }
 }

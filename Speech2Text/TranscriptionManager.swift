@@ -127,10 +127,16 @@ class TranscriptionManager {
 
     // MARK: File Management
 
-    private static let supportedExtensions: Set<String> = [
+    nonisolated static let supportedAudioExtensions: Set<String> = [
         "mp3", "wav", "m4a", "flac", "aac", "ogg", "wma", "aiff", "caf",
+    ]
+
+    nonisolated static let supportedVideoExtensions: Set<String> = [
         "mp4", "mov", "avi", "mkv", "webm", "m4v", "wmv", "flv",
     ]
+
+    nonisolated private static let supportedExtensions: Set<String> =
+        supportedAudioExtensions.union(supportedVideoExtensions)
 
     func addFiles(_ urls: [URL]) {
         for url in urls {
@@ -215,13 +221,9 @@ class TranscriptionManager {
 
     // MARK: Audio Preparation
 
-    private static let videoExtensions: Set<String> = [
-        "mp4", "mov", "avi", "mkv", "webm", "m4v", "wmv", "flv",
-    ]
-
     private func prepareAudio(from url: URL) async throws -> URL {
         let ext = url.pathExtension.lowercased()
-        if Self.videoExtensions.contains(ext) {
+        if Self.supportedVideoExtensions.contains(ext) {
             return try await extractAudio(from: url)
         }
         return url
