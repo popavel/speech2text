@@ -18,7 +18,7 @@ powered by [WhisperKit](https://github.com/argmaxinc/WhisperKit) and OpenAI's Wh
 - 🎙️ **Drag & drop** audio or video files to transcribe
 - 🌍 **Multi-language** support with auto-detect (English, German, Russian, French, Spanish, Italian, Portuguese, Japanese, Chinese, Ukrainian)
 - 🧠 **Multiple Whisper models** — choose between Tiny, Base, Small, and Large V3 Turbo to balance speed vs. accuracy
-- 🎬 **Video support** — automatically extracts audio from `mp4`, `mov`, `mkv`, `webm`, `avi`, etc.
+- 🎬 **Video support** — automatically extracts audio from `mp4`, `mov`, `avi`, `m4v`
 - 🔒 **100% offline** — audio never leaves your machine; models run on-device via Core ML
 - 📝 **Batch transcription** of multiple files at once
 
@@ -26,7 +26,7 @@ powered by [WhisperKit](https://github.com/argmaxinc/WhisperKit) and OpenAI's Wh
 
 **Audio:** `mp3`, `wav`, `m4a`, `flac`, `aac`, `ogg`, `wma`, `aiff`, `caf`
 
-**Video:** `mp4`, `mov`, `avi`, `mkv`, `webm`, `m4v`, `wmv`, `flv`
+**Video:** `mp4`, `mov`, `avi`, `m4v`
 
 ## Requirements
 
