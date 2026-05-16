@@ -25,5 +25,6 @@ Pods/
 *.bin
 *.mlmodelc
 
-# Claude folder
-.claude
+# Claude folder — share settings.json, keep everything else local
+.claude/*
+!.claude/settings.json

@@ -32,6 +32,20 @@ xcodebuild ... test -only-testing:Speech2TextTests/TranscriptionLanguageTests/di
 
 Tests use the **Swift Testing** framework (`@Suite`, `@Test`, `#expect`) — not XCTest. Keep new tests in that style.
 
+## Workflow for code changes
+
+Every code change follows this loop. Do not skip steps.
+
+1. **Branch.** Create a feature branch off `main` before touching any file: `git checkout -b feature/<short-name>`. Editing on `main` is blocked by a hook (see below).
+2. **Test first.** Add or update a Swift Testing test that exercises the behavior you're about to change. The test should fail for the right reason before you start implementing.
+3. **Implement** the change in the source file.
+4. **Regenerate** the Xcode project if `project.yml` changed: `xcodegen generate`.
+5. **Build**, then **test** — using the commands in the "Common commands" section above.
+6. **Fix the code, not the test.** If the build fails or any test fails, iterate on the implementation until both go green. Do not delete or weaken a failing test to make it pass. If a test is genuinely wrong, explain why before changing it.
+7. **Hand off, don't commit.** When build + tests are green, summarize the changed files and stop. The human reviews and runs `git commit` themselves — `git commit` is blocked by a hook.
+
+Two hooks in [.claude/settings.json](.claude/settings.json) enforce the branch and commit rules; the rest is on you. If a hook denies an action, the message tells you what to do next.
+
 ## Architecture
 
 Three Swift files do all the real work; the UI is intentionally thin.
