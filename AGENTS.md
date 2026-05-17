@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Shared guidance for AI coding assistants (Claude Code, GitHub Copilot, Codex, Cursor, etc.) working in this repository. Tool-specific entry points (`CLAUDE.md`, `.github/copilot-instructions.md`) point here so there's one source of truth.
+Shared guidance for AI coding assistants (Claude Code, GitHub Copilot, Codex, Cursor, etc.) working in this repository. Tool-specific entry points (`CLAUDE.md`, `.github/copilot-instructions.md`) are symlinks to this file, so there's one source of truth — edit `AGENTS.md` directly.
 
 ## Project generation
 
