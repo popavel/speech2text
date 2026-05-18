@@ -27,6 +27,7 @@ targets:
     scheme:
       testTargets:
         - Speech2TextTests
+        - Speech2TextIntegrationTests
 
   Speech2TextTests:
     type: bundle.unit-test
@@ -35,6 +36,18 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.tests
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Speech2Text
+
+  Speech2TextIntegrationTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Speech2TextIntegrationTests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.integrationtests
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
     dependencies:

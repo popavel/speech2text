@@ -9,9 +9,12 @@
 /* Begin PBXBuildFile section */
 		1CF2C1794677E41DC96E69AA /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21AB074AFFC5D1AD1EE56710 /* ContentView.swift */; };
 		397D9D4FF6646B0BEF155EA8 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6D66FC1E4DBAE5C023DB0F5D /* WhisperKit */; };
+		5CCCC69CB4868E26C2B37BE7 /* AudioExtractionIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C400EB794A0666C23BA973D9 /* AudioExtractionIntegrationTests.swift */; };
 		6588BBA074EF1F9318039BFE /* TranscriptionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BD5F2DD613FB74ED192E9E /* TranscriptionManagerTests.swift */; };
 		6B8951BC38B682BE761089B0 /* TranscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18BC5C2C8E4D6DFCEC77E399 /* TranscriptionManager.swift */; };
+		8C64B592EB1CD30DFC87E00D /* MediaFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31574C4C2C482101D4B25A0B /* MediaFixtures.swift */; };
 		9842F6E9AB5C932CECD3DC99 /* Speech2TextApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0550083328F5CD9C15E2E33D /* Speech2TextApp.swift */; };
+		A3F273342E6E6EF2526082E1 /* TranscriptionPipelineIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CBA8B99A25889C574665D9 /* TranscriptionPipelineIntegrationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -22,15 +25,26 @@
 			remoteGlobalIDString = 71A5D77E122F42FE5E68318B;
 			remoteInfo = Speech2Text;
 		};
+		61B38EDE26B9CEA53268D734 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 3726EC8B2D76F11A5C328567 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 71A5D77E122F42FE5E68318B;
+			remoteInfo = Speech2Text;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		03CBA8B99A25889C574665D9 /* TranscriptionPipelineIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineIntegrationTests.swift; sourceTree = "<group>"; };
 		0550083328F5CD9C15E2E33D /* Speech2TextApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speech2TextApp.swift; sourceTree = "<group>"; };
 		18BC5C2C8E4D6DFCEC77E399 /* TranscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionManager.swift; sourceTree = "<group>"; };
 		21AB074AFFC5D1AD1EE56710 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		31574C4C2C482101D4B25A0B /* MediaFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaFixtures.swift; sourceTree = "<group>"; };
 		3668312EB0D98FBE6AACB6FF /* Speech2Text.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Speech2Text.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2BE429EBEFC2DB8C0617D82 /* Speech2TextTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Speech2TextTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B3BD5F2DD613FB74ED192E9E /* TranscriptionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionManagerTests.swift; sourceTree = "<group>"; };
+		C400EB794A0666C23BA973D9 /* AudioExtractionIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioExtractionIntegrationTests.swift; sourceTree = "<group>"; };
+		DEBD1E9C7CDCE059D602F705 /* Speech2TextIntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Speech2TextIntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -45,6 +59,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		85F3862A8D40C1F7C9F461BC /* Speech2TextIntegrationTests */ = {
+			isa = PBXGroup;
+			children = (
+				C400EB794A0666C23BA973D9 /* AudioExtractionIntegrationTests.swift */,
+				31574C4C2C482101D4B25A0B /* MediaFixtures.swift */,
+				03CBA8B99A25889C574665D9 /* TranscriptionPipelineIntegrationTests.swift */,
+			);
+			path = Speech2TextIntegrationTests;
+			sourceTree = "<group>";
+		};
 		9D452FF7FFF7E69D91B11D2F /* Speech2TextTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -57,6 +81,7 @@
 			isa = PBXGroup;
 			children = (
 				FC91814D84CB100BE2B3A4FC /* Speech2Text */,
+				85F3862A8D40C1F7C9F461BC /* Speech2TextIntegrationTests */,
 				9D452FF7FFF7E69D91B11D2F /* Speech2TextTests */,
 				F787F08E4B0A84C91C437043 /* Products */,
 			);
@@ -66,6 +91,7 @@
 			isa = PBXGroup;
 			children = (
 				3668312EB0D98FBE6AACB6FF /* Speech2Text.app */,
+				DEBD1E9C7CDCE059D602F705 /* Speech2TextIntegrationTests.xctest */,
 				A2BE429EBEFC2DB8C0617D82 /* Speech2TextTests.xctest */,
 			);
 			name = Products;
@@ -121,6 +147,24 @@
 			productReference = 3668312EB0D98FBE6AACB6FF /* Speech2Text.app */;
 			productType = "com.apple.product-type.application";
 		};
+		9E433F14515FF4424C71326A /* Speech2TextIntegrationTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DC01C601051B02E1CA317A60 /* Build configuration list for PBXNativeTarget "Speech2TextIntegrationTests" */;
+			buildPhases = (
+				EA594DD7CA3E1F9BCD16835D /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				44C68B52F2917290D2520AEB /* PBXTargetDependency */,
+			);
+			name = Speech2TextIntegrationTests;
+			packageProductDependencies = (
+			);
+			productName = Speech2TextIntegrationTests;
+			productReference = DEBD1E9C7CDCE059D602F705 /* Speech2TextIntegrationTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -150,6 +194,7 @@
 			projectRoot = "";
 			targets = (
 				71A5D77E122F42FE5E68318B /* Speech2Text */,
+				9E433F14515FF4424C71326A /* Speech2TextIntegrationTests */,
 				1D8F52865BF04B82384899FF /* Speech2TextTests */,
 			);
 		};
@@ -174,9 +219,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EA594DD7CA3E1F9BCD16835D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5CCCC69CB4868E26C2B37BE7 /* AudioExtractionIntegrationTests.swift in Sources */,
+				8C64B592EB1CD30DFC87E00D /* MediaFixtures.swift in Sources */,
+				A3F273342E6E6EF2526082E1 /* TranscriptionPipelineIntegrationTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		44C68B52F2917290D2520AEB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 71A5D77E122F42FE5E68318B /* Speech2Text */;
+			targetProxy = 61B38EDE26B9CEA53268D734 /* PBXContainerItemProxy */;
+		};
 		8246770A307E204AF3B70C97 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 71A5D77E122F42FE5E68318B /* Speech2Text */;
@@ -185,6 +245,24 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0DB0DEAE34BE1E6B1D7BF154 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.speech2text.integrationtests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Speech2Text.app/Contents/MacOS/Speech2Text";
+			};
+			name = Release;
+		};
 		2D1A31AA90743FC2565BBBC6 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -258,6 +336,24 @@
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Speech2Text.app/Contents/MacOS/Speech2Text";
 			};
 			name = Release;
+		};
+		A24DB34B950F1883AFD5C92A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.speech2text.integrationtests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Speech2Text.app/Contents/MacOS/Speech2Text";
+			};
+			name = Debug;
 		};
 		E56EC407EC678E9FE897F5C1 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -386,6 +482,15 @@
 			buildConfigurations = (
 				3512ECE88A089D91C911FC7F /* Debug */,
 				430ECCE0953873EF9489BDFB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DC01C601051B02E1CA317A60 /* Build configuration list for PBXNativeTarget "Speech2TextIntegrationTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A24DB34B950F1883AFD5C92A /* Debug */,
+				0DB0DEAE34BE1E6B1D7BF154 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
