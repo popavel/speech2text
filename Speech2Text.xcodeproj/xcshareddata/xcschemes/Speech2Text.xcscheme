@@ -50,6 +50,17 @@
                ReferencedContainer = "container:Speech2Text.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "9E433F14515FF4424C71326A"
+               BuildableName = "Speech2TextIntegrationTests.xctest"
+               BlueprintName = "Speech2TextIntegrationTests"
+               ReferencedContainer = "container:Speech2Text.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

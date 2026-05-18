@@ -97,7 +97,7 @@ class TranscriptionManager {
     // MARK: Internal
 
     private var whisperKit: WhisperKit?
-    private var loadedModel: String?
+    private(set) var loadedModel: String?
 
     // MARK: Computed
 
@@ -221,7 +221,7 @@ class TranscriptionManager {
 
     // MARK: Audio Preparation
 
-    private func prepareAudio(from url: URL) async throws -> URL {
+    func prepareAudio(from url: URL) async throws -> URL {
         let ext = url.pathExtension.lowercased()
         if Self.supportedVideoExtensions.contains(ext) {
             return try await extractAudio(from: url)
@@ -229,7 +229,7 @@ class TranscriptionManager {
         return url
     }
 
-    private func extractAudio(from videoURL: URL) async throws -> URL {
+    func extractAudio(from videoURL: URL) async throws -> URL {
         let asset = AVURLAsset(url: videoURL)
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
         guard !audioTracks.isEmpty else {
