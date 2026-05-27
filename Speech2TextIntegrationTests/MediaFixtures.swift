@@ -297,9 +297,13 @@ private final class VideoComposer: @unchecked Sendable {
         guard let pool = adaptor.pixelBufferPool else {
             throw MediaFixtureError.pixelBufferFailed
         }
-        let pixelBuffer = try makeBlackPixelBuffer(pool: pool)
+        nonisolated(unsafe) let pixelBuffer = try makeBlackPixelBuffer(pool: pool)
 
         let queue = DispatchQueue(label: "speech2text.fixture.video")
+        // The requestMediaDataWhenReady block is @Sendable but runs serially on
+        // `queue`, so capturing these non-Sendable AVFoundation objects is safe.
+        nonisolated(unsafe) let input = input
+        nonisolated(unsafe) let adaptor = adaptor
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             nonisolated(unsafe) var frameIdx = 0
             input.requestMediaDataWhenReady(on: queue) {
@@ -322,6 +326,10 @@ private final class VideoComposer: @unchecked Sendable {
         from output: AVAssetReaderTrackOutput
     ) async {
         let queue = DispatchQueue(label: "speech2text.fixture.audio")
+        // The requestMediaDataWhenReady block is @Sendable but runs serially on
+        // `queue`, so capturing these non-Sendable AVFoundation objects is safe.
+        nonisolated(unsafe) let input = input
+        nonisolated(unsafe) let output = output
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             input.requestMediaDataWhenReady(on: queue) {
                 while input.isReadyForMoreMediaData {
