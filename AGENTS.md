@@ -46,6 +46,8 @@ Every code change follows this loop. Do not skip steps.
 
 Two hooks in [.claude/settings.json](.claude/settings.json) enforce the branch and commit rules; the rest is on you. If a hook denies an action, the message tells you what to do next.
 
+The commit guard is a guardrail, not an adversarial sandbox: it reads the Bash command from the hook's stdin and denies `git commit` at a word boundary — including when followed by `;`, `|`, `&`, `>`, or end-of-line — while leaving `git commit-tree`, `git committed`, and unrelated commands alone. It deliberately does **not** use the hook `if:` filter, because that over-matches any command containing `$VAR` or command substitution and would deny innocent commands. Known gap: global options *between* `git` and `commit` (e.g. `git -c user.name=x commit`) are not caught — matching those reliably would need full shell tokenization.
+
 ## Architecture
 
 Three Swift files do all the real work; the UI is intentionally thin.
