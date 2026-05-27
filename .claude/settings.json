@@ -16,8 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git commit*)",
-            "command": "jq -nc '{hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"Commits are reserved for the human reviewer. Make sure xcodebuild build and test both pass, then hand the changes off — do not run git commit yourself.\"}}'"
+            "command": "jq -r '.tool_input.command // \"\"' | grep -Eq '(^|[^[:alnum:]_-])git[[:space:]]+commit($|[^[:alnum:]_-])' && jq -nc '{hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"Commits are reserved for the human reviewer. Make sure xcodebuild build and test both pass, then hand the changes off — do not run git commit yourself.\"}}' || true"
           }
         ]
       }
