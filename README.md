@@ -69,6 +69,30 @@ xcodebuild \
   build
 ```
 
+## Troubleshooting
+
+### VSCode/SourceKit: `Loading the standard library failed` or `No such module 'Testing'`
+
+If you edit in VSCode with the [Swift extension](https://marketplace.visualstudio.com/items?itemName=swiftlang.swift-vscode) and SourceKit reports errors such as `Loading the standard library failed` on an `import` line (typically in files importing **WhisperKit**), or `No such module 'Testing'` in the test targets — even though `xcodebuild` builds and tests fine — the language server is missing per-file compiler arguments.
+
+**Why:** sourcekit-lsp gets its per-file compiler arguments from [xcode-build-server](https://github.com/SolaWing/xcode-build-server) (via `buildServer.json`). By default it runs in `kind: xcode` mode, which reads those arguments from the binary `.xcactivitylog` build log that **Xcode.app** writes under `DerivedData/.../Logs/Build/`. A plain command-line `xcodebuild` run does **not** write that log, so in this mode the server has no arguments to hand out — files importing non-SDK modules (WhisperKit, Swift Testing) can't be resolved, and the failure is reported at the first `import`. Files that only import SDK frameworks (`Foundation`, `AVFoundation`) keep working, which is why the error appears in some files but not others.
+
+The fix below does **not** rely on that log: `xcode-build-server parse` reads the `swiftc` command lines that `xcodebuild` prints to the console and records them in a `.compile` database. The same `xcodebuild` is used — the difference is that its output is now captured directly. (`clean` is required so every file actually recompiles and prints its compiler command; an up-to-date build compiles nothing.)
+
+**Fix** — regenerate the compile database from a real build, then restart the language server:
+
+```bash
+brew install xcode-build-server   # once, if not already installed
+
+# Use build-for-testing so the app AND test targets are captured in one log
+xcodebuild -project Speech2Text.xcodeproj -scheme Speech2Text \
+  -configuration Debug -destination 'platform=macOS' \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO clean build-for-testing \
+  > /tmp/s2t-build.log 2>&1 && xcode-build-server parse /tmp/s2t-build.log
+```
+
+Then in VSCode: `Cmd+Shift+P` → **Swift: Restart LSP Server**. Re-run the command whenever you add source files or change imports/dependencies. The generated `buildServer.json` and `.compile` are machine-specific and git-ignored.
+
 ## Usage
 
 1. Launch the app.
