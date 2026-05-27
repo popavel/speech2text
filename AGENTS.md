@@ -4,7 +4,7 @@ Shared guidance for AI coding assistants (Claude Code, GitHub Copilot, Codex, Cu
 
 ## Project generation
 
-The `.xcodeproj` is **generated** from [project.yml](project.yml) by XcodeGen and is gitignored. After editing `project.yml` (sources, targets, dependencies, build settings), regenerate before building:
+The `.xcodeproj` is **generated** from [project.yml](project.yml) by XcodeGen. Most of the bundle is gitignored, but a few generated files are checked in (`project.pbxproj`, the shared `xcshareddata/` schemes, `project.xcworkspace/contents.xcworkspacedata`, and `Package.resolved`) so the project opens and resolves packages without regenerating. After editing `project.yml` (sources, targets, dependencies, build settings), regenerate before building:
 
 ```bash
 xcodegen generate
