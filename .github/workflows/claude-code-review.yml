@@ -1,0 +1,47 @@
+name: Claude Code Review
+
+# Automatic, static review of every PR. No build — runs on cheap Linux runners
+# and leaves a single review comment.
+#
+# Auth: uses a Claude subscription (Pro/Max) via an OAuth token, NOT a pay-as-you-go
+# API key. Generate it locally with `claude setup-token` and store it as the repo
+# secret CLAUDE_CODE_OAUTH_TOKEN (Settings → Secrets and variables → Actions).
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - 'feature/**'
+      - main
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Review with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review this pull request as a Swift / SwiftUI reviewer for the
+            Speech2Text macOS app. Focus on, in priority order:
+            - Correctness bugs — especially Swift 6 strict-concurrency and
+              @MainActor actor-boundary violations (TranscriptionManager is
+              @MainActor; WhisperKit is imported @preconcurrency).
+            - WhisperKit API usage — the dependency tracks `branch: main` and can
+              drift, so flag fragile or newly-broken usage.
+            - Tests: new tests MUST use Swift Testing (@Suite/@Test/#expect), not
+              XCTest. Flag any XCTest-style additions.
+            - The state-flow rule in AGENTS.md: UI is one-way off
+              TranscriptionManager; flag any parallel state added in views.
+            Leave ONE concise review via `gh pr comment`, citing file:line. Skip
+            style nits and praise. If you find nothing material, say so briefly.
+          claude_args: |
+            --allowedTools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Read,Grep,Glob"

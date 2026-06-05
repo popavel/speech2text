@@ -16,7 +16,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -Eq '(^|[^[:alnum:]_-])git[[:space:]]+commit($|[^[:alnum:]_-])' && jq -nc '{hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"Commits are reserved for the human reviewer. Make sure xcodebuild build and test both pass, then hand the changes off — do not run git commit yourself.\"}}' || true"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/commit-guard.sh\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=$(jq -r '.tool_input.file_path // \"\"'); case \"${file##*/}\" in project.yml) if command -v xcodegen >/dev/null 2>&1; then (cd \"${CLAUDE_PROJECT_DIR:-.}\" && xcodegen generate >/tmp/xcodegen-hook.log 2>&1) && jq -nc '{hookSpecificOutput:{hookEventName:\"PostToolUse\",additionalContext:\"project.yml changed — ran `xcodegen generate` to regenerate the .xcodeproj. Build/test next.\"}}' || jq -nc '{hookSpecificOutput:{hookEventName:\"PostToolUse\",additionalContext:\"project.yml changed but `xcodegen generate` failed — see /tmp/xcodegen-hook.log and regenerate manually before building.\"}}'; fi ;; esac"
           }
         ]
       }

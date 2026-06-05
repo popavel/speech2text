@@ -30,6 +30,10 @@ Pods/
 *.bin
 *.mlmodelc
 
-# Claude folder — share settings.json, keep everything else local
+# Claude folder — share settings.json + the automation suite (commands, agents,
+# hooks); keep personal/local bits (settings.local.json, transcripts, etc.) out.
 .claude/*
 !.claude/settings.json
+!.claude/commands/
+!.claude/agents/
+!.claude/hooks/
