@@ -1,0 +1,100 @@
+name: WhisperKit Drift Check
+
+# WhisperKit is pinned to `branch: main` (see project.yml), so upstream can break
+# our build at any time. This weekly job resolves to the latest main, builds +
+# tests, and either opens a PR (still green → bump Package.resolved) or files an
+# issue tagging @claude (broken → needs adapting).
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+env:
+  XCODE_PROJECT: Speech2Text.xcodeproj
+  XCODE_SCHEME: Speech2Text
+  RESOLVED: Speech2Text.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+jobs:
+  drift:
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4.1'
+
+      - name: Install build tools
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Resolve to latest WhisperKit main
+        run: |
+          set -o pipefail
+          # Drop the pinned Package.resolved first: a plain resolve honors the
+          # existing pin and would never advance the branch:main dependency, so
+          # the drift check would never actually see drift. Removing it forces
+          # re-resolution to the current tip of WhisperKit's main.
+          rm -f "$RESOLVED"
+          xcodebuild -resolvePackageDependencies \
+            -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" | xcbeautify
+
+      - name: Build & test against latest main
+        id: verify
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
+            -configuration Debug -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | xcbeautify
+          xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test | xcbeautify
+
+      - name: Open PR (still green)
+        if: steps.verify.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- "$RESOLVED"; then
+            echo "WhisperKit main unchanged since last resolve — nothing to do."
+            exit 0
+          fi
+          branch="chore/whisperkit-drift-${{ github.run_id }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add "$RESOLVED"
+          git commit -m "chore: bump WhisperKit to latest main (drift check)"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "chore: WhisperKit main bump (drift check passed)" \
+            --body "Automated weekly WhisperKit drift check. The pinned \`branch: main\` dependency advanced and the app still **builds + tests green** against it. Merging keeps \`Package.resolved\` current."
+
+      - name: File issue (build broke)
+        if: steps.verify.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="WhisperKit main drift broke the build"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Drift check failed again — run: $run_url"
+            exit 0
+          fi
+          gh issue create --title "$title" --body "$(printf '%s\n' \
+            'The weekly WhisperKit drift check failed: building/testing against the latest `argmaxinc/WhisperKit` `main` no longer passes — likely upstream API drift.' \
+            '' \
+            "Run logs: $run_url" \
+            '' \
+            '@claude please investigate the build failure and open a PR that adapts our WhisperKit usage to the upstream changes.')"

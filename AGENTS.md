@@ -44,11 +44,41 @@ Every code change follows this loop. Do not skip steps.
 4. **Regenerate** the Xcode project if `project.yml` changed: `xcodegen generate`.
 5. **Build**, then **test** — using the commands in the "Common commands" section above.
 6. **Fix the code, not the test.** If the build fails or any test fails, iterate on the implementation until both go green. Do not delete or weaken a failing test to make it pass. If a test is genuinely wrong, explain why before changing it.
-7. **Hand off, don't commit.** When build + tests are green, summarize the changed files and stop. The human reviews and runs `git commit` themselves — `git commit` is blocked by a hook.
+7. **Commit via `/precommit`.** On a feature branch, the agent commits through the
+   [`/precommit`](.claude/commands/precommit.md) command: it loops build+test → review → fix until
+   the build is green and a `code-review` comes back clean, then stages, records a
+   review marker, and commits. A direct `git commit` by the agent is blocked until
+   that review has passed; on `main` it is blocked outright. **Commits you type in
+   your own terminal are never intercepted** — hooks only see commands the agent runs.
 
-Two hooks in [.claude/settings.json](.claude/settings.json) enforce the branch and commit rules; the rest is on you. If a hook denies an action, the message tells you what to do next.
+Hooks in [.claude/settings.json](.claude/settings.json) enforce the branch and commit rules; the rest is on you. If a hook denies an action, the message tells you what to do next.
 
-The commit guard is a guardrail, not an adversarial sandbox: it reads the Bash command from the hook's stdin and denies `git commit` at a word boundary — including when followed by `;`, `|`, `&`, `>`, or end-of-line — while leaving `git commit-tree`, `git committed`, and unrelated commands alone. It deliberately does **not** use the hook `if:` filter, because that over-matches any command containing `$VAR` or command substitution and would deny innocent commands. Known gap: global options *between* `git` and `commit` (e.g. `git -c user.name=x commit`) are not caught — matching those reliably would need full shell tokenization.
+The commit guard ([.claude/hooks/commit-guard.sh](.claude/hooks/commit-guard.sh)) is a guardrail, not an adversarial sandbox. It reads the Bash command from the hook's stdin and acts only on a real `git commit` at a word boundary — including when followed by `;`, `|`, `&`, `>`, or end-of-line — while leaving `git commit-tree`, `git committed`, and unrelated commands alone. For a matched agent commit it denies on `main`/`master`, and on a feature branch denies unless a review marker (`<git-dir>/precommit-review.ok`) equals the SHA-256 of the staged tree (`git diff --cached HEAD`). `/precommit` writes that marker after a clean final review, so the marker is invalidated by any later change to the staged tree — forcing a re-review. It is a guardrail because the marker attests *a review ran on this exact code*, not that the review was thorough. Known gaps: global options *between* `git` and `commit` (e.g. `git -c user.name=x commit`) aren't matched (would need full shell tokenization), and brand-new files aren't part of the hash until staged.
+
+## Automation helpers
+
+Beyond the guard hooks, this repo carries optional automation. The local pieces
+need no API key or subscription beyond your normal Claude Code session; the GitHub
+pieces run on GitHub's runners.
+
+- **Auto-regen hook** — a `PostToolUse` hook in [.claude/settings.json](.claude/settings.json)
+  runs `xcodegen generate` automatically whenever `project.yml` is edited (workflow step 4).
+- **`/check` command** — [.claude/commands/check.md](.claude/commands/check.md) builds then
+  tests with the exact CI incantation (Debug, signing off). Pass `-only-testing:...` to scope it.
+- **`/precommit` command** — [.claude/commands/precommit.md](.claude/commands/precommit.md) is the
+  gated path for agent commits: it loops build+test → `code-review` → fix until clean (review
+  effort defaults to `high`; `ultra` is intentionally excluded — it's a billed cloud review), then
+  stages, marks, and commits. Enforced by [commit-guard.sh](.claude/hooks/commit-guard.sh).
+- **Subagents** — [build-verifier](.claude/agents/build-verifier.md) owns the build→test→fix
+  loop in its own context (keeps `xcodebuild` logs out of the main thread); [test-author](.claude/agents/test-author.md)
+  writes the failing Swift Testing test first.
+- **`@claude` bot** — [.github/workflows/claude.yml](.github/workflows/claude.yml) responds to
+  `@claude` mentions on issues/PRs; [claude-code-review.yml](.github/workflows/claude-code-review.yml)
+  auto-reviews each PR. Both authenticate via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret
+  (subscription auth, not a pay-as-you-go API key — generate with `claude setup-token`).
+- **WhisperKit drift check** — [.github/workflows/whisperkit-drift.yml](.github/workflows/whisperkit-drift.yml)
+  runs weekly: resolves to the latest WhisperKit `main`, builds + tests, and opens a PR if
+  still green or files an issue (tagging `@claude`) if upstream drift broke the build.
 
 ## Architecture
 
