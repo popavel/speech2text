@@ -69,6 +69,9 @@ pieces run on GitHub's runners.
   gated path for agent commits: it loops build+test → `code-review` → fix until clean (review
   effort defaults to `high`; `ultra` is intentionally excluded — it's a billed cloud review), then
   stages, marks, and commits. Enforced by [commit-guard.sh](.claude/hooks/commit-guard.sh).
+- **`/fix-pr` command** — [.claude/commands/fix-pr.md](.claude/commands/fix-pr.md) addresses a PR's
+  review findings **locally** (the on-your-Mac alternative to the `@claude fix` workflow): checks out
+  the PR, reads its review comments, fixes them, then verifies + commits via `/precommit` and pushes.
 - **Subagents** — [build-verifier](.claude/agents/build-verifier.md) owns the build→test→fix
   loop in its own context (keeps `xcodebuild` logs out of the main thread); [test-author](.claude/agents/test-author.md)
   writes the failing Swift Testing test first.
