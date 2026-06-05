@@ -21,12 +21,15 @@ jobs:
     # Only run when a TRUSTED user (repo owner, org member, or invited
     # collaborator) actually mentions @claude. The author_association guard stops
     # outsiders from invoking the bot and spending your subscription quota.
+    # `@claude fix` is excluded here — that command is handled by claude-fix.yml.
     if: |
       (github.event_name == 'issue_comment' &&
         contains(github.event.comment.body, '@claude') &&
+        !contains(github.event.comment.body, '@claude fix') &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
       (github.event_name == 'pull_request_review_comment' &&
         contains(github.event.comment.body, '@claude') &&
+        !contains(github.event.comment.body, '@claude fix') &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
       (github.event_name == 'pull_request_review' &&
         contains(github.event.review.body, '@claude') &&

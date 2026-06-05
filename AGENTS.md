@@ -73,8 +73,16 @@ pieces run on GitHub's runners.
   loop in its own context (keeps `xcodebuild` logs out of the main thread); [test-author](.claude/agents/test-author.md)
   writes the failing Swift Testing test first.
 - **`@claude` bot** — [.github/workflows/claude.yml](.github/workflows/claude.yml) responds to
-  `@claude` mentions on issues/PRs; [claude-code-review.yml](.github/workflows/claude-code-review.yml)
-  auto-reviews each PR. Both authenticate via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret
+  `@claude` mentions on issues/PRs (excluding `@claude fix`, which the fixer handles).
+- **PR review + fix loop (human-in-the-loop)** — [claude-code-review.yml](.github/workflows/claude-code-review.yml)
+  runs `/code-review max --comment` (multi-agent, inline comments) on every PR push. A **human
+  maintainer** then comments `@claude fix` to invoke [claude-fix.yml](.github/workflows/claude-fix.yml),
+  which in one macOS run applies the findings, builds + tests them (green gate — a broken fix is not
+  pushed), pushes, and re-runs the max review. The review bot itself can't trigger the fixer
+  (`author_association` + GitHub's `GITHUB_TOKEN` loop-prevention block that by design). Build/test/
+  re-review run inline, so no PAT is needed. The fixer commits via a workflow step, not a Claude tool
+  call, so the local commit guard doesn't apply in CI.
+- All bot workflows authenticate the model via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret
   (subscription auth, not a pay-as-you-go API key — generate with `claude setup-token`).
 - **WhisperKit drift check** — [.github/workflows/whisperkit-drift.yml](.github/workflows/whisperkit-drift.yml)
   runs weekly: resolves to the latest WhisperKit `main`, builds + tests, and opens a PR if

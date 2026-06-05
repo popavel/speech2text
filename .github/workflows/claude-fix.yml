@@ -1,0 +1,121 @@
+name: Claude Fix
+
+# Auto-fix step in a HUMAN-IN-THE-LOOP loop. A trusted maintainer (a person —
+# never the review bot) comments "@claude fix" on a PR, or replies it to an inline
+# review comment. In ONE run this workflow:
+#   1. applies the open review findings,
+#   2. builds + tests them (green gate — a broken fix is NOT pushed),
+#   3. pushes the fix to the PR branch,
+#   4. re-runs the max-effort review.
+# Doing build/test/review inline means NO PAT is needed: we don't rely on the
+# push to re-trigger other workflows (GitHub suppresses workflow triggers from
+# GITHUB_TOKEN pushes). It's the CI-side mirror of the local /precommit loop.
+#
+# Runs on macOS because it builds the Xcode project. The commit is made by a
+# run-step (a workflow command, not a Claude tool call) so the repo's
+# .claude/settings.json commit guard doesn't intercept it.
+#
+# Model auth: subscription OAuth token in the CLAUDE_CODE_OAUTH_TOKEN repo secret.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+env:
+  XCODE_PROJECT: Speech2Text.xcodeproj
+  XCODE_SCHEME: Speech2Text
+
+jobs:
+  fix:
+    # Trusted maintainer said "@claude fix" on a PR (not a plain issue). The
+    # author_association allowlist also stops the review bot from triggering this.
+    if: |
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '@claude fix') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '@claude fix') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check out the PR branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr checkout ${{ github.event.issue.number || github.event.pull_request.number }}
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4.1'
+
+      - name: Install build tools
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Apply fixes with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            A maintainer commented "@claude fix" on this pull request. Address the
+            open review findings:
+            1. Read the unresolved review comments and the PR diff (`gh pr view`
+               with `--comments`, `gh api`, `gh pr diff`).
+            2. Apply the smallest correct fix for each actionable finding. Edit
+               source — never weaken or delete a test. Follow AGENTS.md (Swift
+               Testing style, @MainActor / strict-concurrency rules, one-way state
+               flow off TranscriptionManager).
+            3. If a finding is wrong, do NOT change code for it.
+            Do NOT run git, commit, or push — later workflow steps build, commit,
+            and re-review your edits.
+          claude_args: |
+            --allowedTools "Edit,Write,Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*)"
+
+      # Green gate: a fix that doesn't build or pass tests fails the job here and
+      # is never pushed (mirrors /precommit's "green before commit").
+      - name: Build & test the fix
+        run: |
+          set -o pipefail
+          xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
+            -configuration Debug -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | xcbeautify
+          xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test | xcbeautify
+
+      - name: Commit & push the fix
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No changes to commit — Claude made no edits."
+            exit 0
+          fi
+          git add -A
+          git commit -m "fix: apply @claude review fixes"
+          git push
+
+      - name: Re-review with Claude (max effort)
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            /code-review max --comment ${{ github.event.issue.number || github.event.pull_request.number }}
+          claude_args: |
+            --allowedTools "Task,Agent,Bash,Read,Grep,Glob"
