@@ -25,12 +25,14 @@ xcodebuild -project Speech2Text.xcodeproj -scheme Speech2Text \
   -destination 'platform=macOS' \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test | xcbeautify
 
-# Run a single test or suite (Swift Testing uses -only-testing:<Target>/<SuiteName>/<testFunc>)
+# Run a single SUITE — the finest granularity that works here (see caveat below).
+# The path uses the struct name (TranscriptionLanguageTests), NOT the @Suite display name.
 xcodebuild ... test -only-testing:Speech2TextTests/TranscriptionLanguageTests
-xcodebuild ... test -only-testing:Speech2TextTests/TranscriptionLanguageTests/displayNamesAreNonEmpty
 ```
 
 Tests use the **Swift Testing** framework (`@Suite`, `@Test`, `#expect`) — not XCTest. Keep new tests in that style.
+
+> **Subsetting tests is limited — `-only-testing` only resolves to the suite, not a single test.** With Swift Testing under `xcodebuild` here, `-only-testing:<Target>/<SuiteStruct>` works, but the single-test form `-only-testing:<Target>/<SuiteStruct>/<testFunc>` silently runs **0 tests** — even with a correct function name (verified against real functions in both `Speech2TextTests` and `Speech2TextIntegrationTests`). To focus on one test, run its whole suite, or run the full suite and `grep` the output. Relatedly, `xcbeautify` swallows parameterized `@Test(arguments:)` cases (they don't show individually and can look like the test never ran); pipe raw `xcodebuild` output through `grep` to confirm they executed.
 
 ## Workflow for code changes
 
