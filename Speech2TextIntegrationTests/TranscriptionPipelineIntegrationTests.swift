@@ -18,6 +18,11 @@ private let whisperKitTestsEnabled: Bool = {
 @MainActor
 @Suite(
     "Transcription pipeline (integration)",
+    // Run serially: every test loads a WhisperKit model into the same shared
+    // ~/Documents/huggingface cache, so concurrent first-run downloads would
+    // race on the same files. (parallelizable="NO" in the scheme only governs
+    // XCTest's multi-process runner, not Swift Testing's in-process parallelism.)
+    .serialized,
     .disabled(
         if: !whisperKitTestsEnabled,
         "Set TEST_RUNNER_RUN_WHISPERKIT_TESTS=1 to run — downloads the tiny model (~75 MB) on first use."
@@ -25,13 +30,28 @@ private let whisperKitTestsEnabled: Bool = {
 )
 struct TranscriptionPipelineIntegrationTests {
 
+    // Shared across the tests below so the ~75 MB tiny model is loaded into
+    // memory once for the whole (serialized) suite instead of once per test.
+    // `modelCachingAcrossRuns` deliberately uses its own fresh manager because
+    // it asserts first-load-then-reuse behavior.
+    private static let sharedManager = TranscriptionManager()
+
+    private static func preparedManager(
+        language: TranscriptionLanguage = .auto
+    ) -> TranscriptionManager {
+        let manager = sharedManager
+        manager.clearFiles()
+        manager.selectedModel = .tiny
+        manager.selectedLanguage = language
+        return manager
+    }
+
     @Test("Audio → text: tiny model transcribes synthesized speech")
     func audioToTextSucceeds() async throws {
         let speech = try await MediaFixtures.makeSpeechAudio()
         defer { MediaFixtures.cleanup([speech]) }
 
-        let manager = TranscriptionManager()
-        manager.selectedModel = .tiny
+        let manager = Self.preparedManager()
         manager.addFiles([speech])
 
         await manager.startTranscription()
@@ -44,11 +64,11 @@ struct TranscriptionPipelineIntegrationTests {
     @Test("Video → text: full pipeline on a generated MP4")
     func videoToTextSucceeds() async throws {
         let speech = try await MediaFixtures.makeSpeechAudio()
+        defer { MediaFixtures.cleanup([speech]) }
         let video = try await MediaFixtures.makeVideoWithAudio(audioURL: speech, ext: "mp4")
-        defer { MediaFixtures.cleanup([speech, video]) }
+        defer { MediaFixtures.cleanup([video]) }
 
-        let manager = TranscriptionManager()
-        manager.selectedModel = .tiny
+        let manager = Self.preparedManager()
         manager.addFiles([video])
 
         await manager.startTranscription()
@@ -61,11 +81,11 @@ struct TranscriptionPipelineIntegrationTests {
     @Test("Multi-file batch concatenates results with filename headers")
     func multiFileBatch() async throws {
         let first = try await MediaFixtures.makeSpeechAudio(text: "Hello there.")
+        defer { MediaFixtures.cleanup([first]) }
         let second = try await MediaFixtures.makeSpeechAudio(text: "Testing one two three.")
-        defer { MediaFixtures.cleanup([first, second]) }
+        defer { MediaFixtures.cleanup([second]) }
 
-        let manager = TranscriptionManager()
-        manager.selectedModel = .tiny
+        let manager = Self.preparedManager()
         manager.addFiles([first, second])
 
         await manager.startTranscription()
@@ -80,9 +100,7 @@ struct TranscriptionPipelineIntegrationTests {
         let speech = try await MediaFixtures.makeSpeechAudio()
         defer { MediaFixtures.cleanup([speech]) }
 
-        let manager = TranscriptionManager()
-        manager.selectedModel = .tiny
-        manager.selectedLanguage = .english
+        let manager = Self.preparedManager(language: .english)
         manager.addFiles([speech])
 
         await manager.startTranscription()
@@ -97,20 +115,24 @@ struct TranscriptionPipelineIntegrationTests {
         let speech = try await MediaFixtures.makeSpeechAudio(text: "Hello.")
         defer { MediaFixtures.cleanup([speech]) }
 
+        // Fresh manager (not the shared one) so the first run is a genuine load.
         let manager = TranscriptionManager()
         manager.selectedModel = .tiny
         manager.addFiles([speech])
 
         await manager.startTranscription()
         #expect(manager.status == .completed)
-        let firstLoadedModel = manager.loadedModel
-        #expect(firstLoadedModel == WhisperModel.tiny.rawValue)
+        #expect(manager.loadedModel == WhisperModel.tiny.rawValue)
+        // The first run actually constructs an instance.
+        let firstInstance = manager.loadedModelInstance
+        #expect(firstInstance != nil)
 
-        // Second run with same selected model — should not reset loadedModel.
+        // Second run with the same selected model must reuse that very instance
+        // rather than reconstruct it.
         manager.addFiles([speech])
         await manager.startTranscription()
         #expect(manager.status == .completed)
-        #expect(manager.loadedModel == firstLoadedModel)
+        #expect(manager.loadedModelInstance === firstInstance)
     }
 
     // MARK: Helpers
