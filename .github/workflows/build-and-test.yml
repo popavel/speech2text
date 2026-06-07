@@ -1,0 +1,71 @@
+name: Build & Test
+
+# Reusable workflow holding the macOS build-and-test job, so the feature, main,
+# and release pipelines call it instead of each pasting an identical copy.
+on:
+  workflow_call:
+
+# Least-privilege token.
+permissions:
+  contents: read
+
+env:
+  XCODE_PROJECT: Speech2Text.xcodeproj
+  XCODE_SCHEME: Speech2Text
+
+jobs:
+  build-and-test:
+    name: Build & Test (macOS)
+    runs-on: macos-26          # Apple Silicon runner with recent Xcodes
+    timeout-minutes: 30        # don't let a stuck encode/build burn the 6h default
+
+    steps:
+      # 1. Clone the repository into the runner.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Pin the Xcode version so builds are reproducible.
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4.1'
+
+      # 3. Install XcodeGen (you use project.yml) and xcbeautify for log formatting,
+      #    then regenerate the .xcodeproj.
+      - name: Install build tools
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # 4. Show the build settings (useful when debugging CI failures).
+      - name: Show environment
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # 5. Build the app. Code signing is disabled — fine for CI builds.
+      #    `set -o pipefail` + no trailing `|| true` ensures real failures fail the step.
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build | xcbeautify
+
+      # 6. Run tests. Failing tests fail the step.
+      - name: Test
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            test | xcbeautify

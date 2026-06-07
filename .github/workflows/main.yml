@@ -2,9 +2,9 @@ name: Main
 
 # When should this workflow run?
 on:
-  push: 
+  push:
     branches: [main]   # runs on pushes to the main branch
-  pull_request: 
+  pull_request:
     branches: [main]   # runs on pull requests targeting the main branch
   workflow_dispatch:   # lets you trigger it manually from the Actions tab
 
@@ -13,109 +13,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Least-privilege token.
-permissions:
-  contents: read
-
-env:
-  XCODE_PROJECT: Speech2Text.xcodeproj
-  XCODE_SCHEME: Speech2Text
-
 jobs:
+  # Shared build-and-test job (see build-and-test.yml).
   build-and-test:
-    name: Build & Test (macOS)
-    runs-on: macos-26          # Apple Silicon runner with recent Xcodes
+    uses: ./.github/workflows/build-and-test.yml
 
-    steps:
-      # 1. Clone the repository into the runner.
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # 2. Pin the Xcode version so builds are reproducible.
-      - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '26.4.1'
-
-      # 3. Install XcodeGen (you use project.yml) and xcbeautify for log formatting,
-      #    then regenerate the .xcodeproj.
-      - name: Install build tools
-        run: brew install xcodegen xcbeautify
-
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      # 4. Show the build settings (useful when debugging CI failures).
-      - name: Show environment
-        run: |
-          xcodebuild -version
-          swift --version
-
-      # 5. Build the app. Code signing is disabled — fine for CI builds.
-      #    `set -o pipefail` + no trailing `|| true` ensures real failures fail the step.
-      - name: Build
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration Debug \
-            -destination 'platform=macOS' \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            build | xcbeautify
-
-      # 6. Run tests. Failing tests fail the step.
-      - name: Test
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -destination 'platform=macOS' \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            test | xcbeautify
-
+  # Shared WhisperKit integration job (see integration-whisperkit.yml). Runs
+  # after build-and-test passes.
   integration-whisperkit:
     name: Integration (WhisperKit)
-    runs-on: macos-26
     needs: build-and-test
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '26.4.1'
-
-      - name: Install build tools
-        run: brew install xcodegen xcbeautify
-
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      # Cache the WhisperKit model directory between runs so we only download
-      # the ~75 MB tiny model on the first run / when the cache is evicted.
-      - name: Cache WhisperKit models
-        uses: actions/cache@v4
-        with:
-          path: ~/Documents/huggingface
-          key: whisperkit-tiny-${{ runner.os }}-${{ runner.arch }}-v1
-
-      - name: Run WhisperKit integration tests
-        env:
-          # xcodebuild forwards env vars prefixed TEST_RUNNER_ to the test
-          # bundle with the prefix stripped — so the test reads RUN_WHISPERKIT_TESTS.
-          TEST_RUNNER_RUN_WHISPERKIT_TESTS: '1'
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -destination 'platform=macOS' \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            -only-testing:Speech2TextIntegrationTests/TranscriptionPipelineIntegrationTests \
-            test | xcbeautify
+    uses: ./.github/workflows/integration-whisperkit.yml

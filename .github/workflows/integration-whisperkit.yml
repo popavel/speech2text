@@ -1,0 +1,62 @@
+name: Integration (WhisperKit)
+
+# Reusable workflow holding the WhisperKit integration job, so the feature,
+# main, and release pipelines call it instead of each pasting an identical copy.
+on:
+  workflow_call:
+
+# Least-privilege token.
+permissions:
+  contents: read
+
+env:
+  XCODE_PROJECT: Speech2Text.xcodeproj
+  XCODE_SCHEME: Speech2Text
+
+jobs:
+  integration-whisperkit:
+    name: Integration (WhisperKit)
+    runs-on: macos-26
+    timeout-minutes: 30        # a hung HuggingFace download must not run for hours
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4.1'
+
+      - name: Install build tools
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Cache the WhisperKit model directory between runs so we only download
+      # the ~75 MB tiny model on the first run / when the cache is evicted.
+      - name: Cache WhisperKit models
+        uses: actions/cache@v4
+        with:
+          path: ~/Documents/huggingface
+          key: whisperkit-tiny-${{ runner.os }}-${{ runner.arch }}-v1
+          # Fall back to any earlier cache for this OS/arch, so bumping the key
+          # suffix restores the previous model dir instead of a cold download.
+          restore-keys: |
+            whisperkit-tiny-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Run WhisperKit integration tests
+        env:
+          # xcodebuild forwards env vars prefixed TEST_RUNNER_ to the test
+          # bundle with the prefix stripped — so the test reads RUN_WHISPERKIT_TESTS.
+          TEST_RUNNER_RUN_WHISPERKIT_TESTS: '1'
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            -only-testing:Speech2TextIntegrationTests/TranscriptionPipelineIntegrationTests \
+            test | xcbeautify
