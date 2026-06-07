@@ -68,14 +68,19 @@ enum TranscriptionStatus: Equatable {
 
 // MARK: - Errors
 
-enum TranscriptionError: LocalizedError {
+enum TranscriptionError: LocalizedError, Equatable {
     case noAudioTrack
     case audioExtractionFailed
+    case unsupportedFormat(String)
 
     var errorDescription: String? {
         switch self {
         case .noAudioTrack: return "No audio track found in the video file"
         case .audioExtractionFailed: return "Failed to extract audio from the video file"
+        case .unsupportedFormat(let ext):
+            return ext.isEmpty
+                ? "Unsupported file format: file has no extension"
+                : "Unsupported file format: .\(ext)"
         }
     }
 }
@@ -94,10 +99,21 @@ class TranscriptionManager {
     var status: TranscriptionStatus = .idle
     var transcriptionResult: String = ""
 
+    /// File names skipped on the last `addFiles` call because their format is
+    /// unsupported. Exposed as raw data, not a formatted message, so the view
+    /// owns presentation; kept separate from `status` so a partial drop (some
+    /// usable files + some junk) is not reported as a hard `.error`.
+    private(set) var skippedFileNames: [String] = []
+
     // MARK: Internal
 
     private var whisperKit: WhisperKit?
     private(set) var loadedModel: String?
+
+    /// The loaded WhisperKit instance, exposed only as an opaque object so tests
+    /// can assert the same-model fast path reuses it (instance identity) rather
+    /// than reconstructing it.
+    var loadedModelInstance: AnyObject? { whisperKit }
 
     // MARK: Computed
 
@@ -135,28 +151,54 @@ class TranscriptionManager {
         "mp4", "mov", "avi", "m4v",
     ]
 
-    nonisolated private static let supportedExtensions: Set<String> =
-        supportedAudioExtensions.union(supportedVideoExtensions)
+    /// Whether a URL's extension names an audio or video container the app can
+    /// handle. The single source of truth used both to filter dropped files
+    /// (`addFiles`) and to route them (`prepareAudio`).
+    enum MediaKind {
+        case audio
+        case video
+    }
+
+    nonisolated static func mediaKind(for url: URL) -> MediaKind? {
+        let ext = url.pathExtension.lowercased()
+        if supportedVideoExtensions.contains(ext) { return .video }
+        if supportedAudioExtensions.contains(ext) { return .audio }
+        return nil
+    }
 
     func addFiles(_ urls: [URL]) {
+        var skipped: [String] = []
         for url in urls {
-            let ext = url.pathExtension.lowercased()
-            guard Self.supportedExtensions.contains(ext) else { continue }
+            guard Self.mediaKind(for: url) != nil else {
+                skipped.append(url.lastPathComponent)
+                continue
+            }
             if !droppedFileURLs.contains(where: { $0.path == url.path }) {
                 droppedFileURLs.append(url)
             }
         }
+
+        // Surface skipped files as plain data (the view formats the message), not
+        // through `status`: a partial drop is a non-blocking notice, not a hard
+        // `.error`. Each drop replaces the previous notice.
+        skippedFileNames = skipped
     }
 
     func removeFile(at index: Int) {
         guard droppedFileURLs.indices.contains(index) else { return }
         droppedFileURLs.remove(at: index)
+        // Drop the skip notice once the queue is empty so it doesn't linger with
+        // nothing left to act on.
+        if droppedFileURLs.isEmpty {
+            skippedFileNames = []
+        }
     }
 
     func clearFiles() {
         droppedFileURLs.removeAll()
         transcriptionResult = ""
         status = .idle
+        skippedFileNames = []
     }
 
     // MARK: Transcription
@@ -166,6 +208,9 @@ class TranscriptionManager {
 
         status = .loadingModel
         transcriptionResult = ""
+        // The skip notice described the input that's now being transcribed; clear
+        // it so it can't outlive the run (and stack under a later .completed/.error).
+        skippedFileNames = []
 
         do {
             let modelName = selectedModel.rawValue
@@ -222,11 +267,14 @@ class TranscriptionManager {
     // MARK: Audio Preparation
 
     func prepareAudio(from url: URL) async throws -> URL {
-        let ext = url.pathExtension.lowercased()
-        if Self.supportedVideoExtensions.contains(ext) {
+        switch Self.mediaKind(for: url) {
+        case .video:
             return try await extractAudio(from: url)
+        case .audio:
+            return url
+        case nil:
+            throw TranscriptionError.unsupportedFormat(url.pathExtension.lowercased())
         }
-        return url
     }
 
     func extractAudio(from videoURL: URL) async throws -> URL {
@@ -250,6 +298,8 @@ class TranscriptionManager {
         do {
             try await session.export(to: outputURL, as: .m4a)
         } catch {
+            // Export may have written a partial file before failing; don't leak it.
+            try? FileManager.default.removeItem(at: outputURL)
             throw TranscriptionError.audioExtractionFailed
         }
 

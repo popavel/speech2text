@@ -85,6 +85,18 @@ struct TranscriptionErrorTests {
         #expect(TranscriptionError.noAudioTrack.errorDescription?.isEmpty == false)
         #expect(TranscriptionError.audioExtractionFailed.errorDescription?.isEmpty == false)
     }
+
+    @Test("unsupportedFormat names the extension, or says there is none")
+    func unsupportedFormatDescribesExtension() {
+        #expect(
+            TranscriptionError.unsupportedFormat("txt").errorDescription
+                == "Unsupported file format: .txt"
+        )
+        #expect(
+            TranscriptionError.unsupportedFormat("").errorDescription
+                == "Unsupported file format: file has no extension"
+        )
+    }
 }
 
 // MARK: - TranscriptionManager
@@ -116,6 +128,51 @@ struct TranscriptionManagerTests {
             URL(fileURLWithPath: "/tmp/clip.mp3"),
         ])
         #expect(manager.droppedFileURLs.map(\.lastPathComponent) == ["clip.mp3"])
+    }
+
+    @Test("Reports skipped files via a warning naming them, without erroring")
+    func skippedFilesSurfaceWarning() {
+        let manager = TranscriptionManager()
+        manager.addFiles([
+            URL(fileURLWithPath: "/tmp/notes.txt"),
+            URL(fileURLWithPath: "/tmp/photo.jpg"),
+            URL(fileURLWithPath: "/tmp/clip.mp3"),
+        ])
+        // The supported file is still added...
+        #expect(manager.droppedFileURLs.map(\.lastPathComponent) == ["clip.mp3"])
+        // ...and a partial drop is a non-blocking notice, not a hard error.
+        #expect(manager.status == .idle)
+        let skipped = manager.skippedFileNames
+        #expect(skipped.contains("notes.txt"))
+        #expect(skipped.contains("photo.jpg"))
+        #expect(!skipped.contains("clip.mp3"))
+    }
+
+    @Test("addFiles with only supported files leaves status idle and names nothing skipped")
+    func supportedFilesLeaveStatusIdle() {
+        let manager = TranscriptionManager()
+        manager.addFiles([URL(fileURLWithPath: "/tmp/clip.mp3")])
+        #expect(manager.status == .idle)
+        #expect(manager.skippedFileNames.isEmpty)
+    }
+
+    @Test("addFiles with only supported files clears a prior skip notice")
+    func supportedFilesClearPriorSkipWarning() {
+        let manager = TranscriptionManager()
+        manager.addFiles([URL(fileURLWithPath: "/tmp/notes.txt")])
+        #expect(!manager.skippedFileNames.isEmpty)
+        manager.addFiles([URL(fileURLWithPath: "/tmp/clip.mp3")])
+        #expect(manager.skippedFileNames.isEmpty)
+    }
+
+    @Test("addFiles never overwrites an in-progress transcription status")
+    func addFilesKeepsInProgressStatus() {
+        let manager = TranscriptionManager()
+        manager.status = .transcribing(progress: 0.5)
+        // An unsupported drop arriving mid-transcription must not clobber status.
+        manager.addFiles([URL(fileURLWithPath: "/tmp/notes.txt")])
+        #expect(manager.status == .transcribing(progress: 0.5))
+        #expect(!manager.skippedFileNames.isEmpty)
     }
 
     @Test("Treats extensions case-insensitively")
@@ -157,6 +214,26 @@ struct TranscriptionManagerTests {
         manager.removeFile(at: 5)
         manager.removeFile(at: -1)
         #expect(manager.droppedFileURLs.count == 1)
+    }
+
+    @Test("Removing a file keeps the skip notice while the queue is non-empty")
+    func removeKeepsSkipNoticeUntilQueueEmpty() {
+        let manager = TranscriptionManager()
+        manager.addFiles([
+            URL(fileURLWithPath: "/tmp/notes.txt"),
+            URL(fileURLWithPath: "/tmp/a.mp3"),
+            URL(fileURLWithPath: "/tmp/b.mp3"),
+        ])
+        #expect(!manager.skippedFileNames.isEmpty)
+
+        // One of two queued files removed — notice still has a referent.
+        manager.removeFile(at: 0)
+        #expect(!manager.skippedFileNames.isEmpty)
+
+        // Removing the last file empties the queue — drop the orphaned notice.
+        manager.removeFile(at: 0)
+        #expect(manager.droppedFileURLs.isEmpty)
+        #expect(manager.skippedFileNames.isEmpty)
     }
 
     // MARK: clearFiles
