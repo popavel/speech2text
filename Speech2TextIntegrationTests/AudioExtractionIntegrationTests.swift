@@ -16,8 +16,9 @@ struct AudioExtractionIntegrationTests {
         let manager = TranscriptionManager()
 
         let audio = try MediaFixtures.makeToneAudio(duration: 1.0)
+        defer { MediaFixtures.cleanup([audio]) }
         let video = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: "mp4")
-        defer { MediaFixtures.cleanup([audio, video]) }
+        defer { MediaFixtures.cleanup([video]) }
 
         let extracted = try await manager.extractAudio(from: video)
         defer { MediaFixtures.cleanup([extracted]) }
@@ -30,8 +31,9 @@ struct AudioExtractionIntegrationTests {
         let manager = TranscriptionManager()
 
         let audio = try MediaFixtures.makeToneAudio(duration: 1.0)
+        defer { MediaFixtures.cleanup([audio]) }
         let video = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: "mov")
-        defer { MediaFixtures.cleanup([audio, video]) }
+        defer { MediaFixtures.cleanup([video]) }
 
         let extracted = try await manager.extractAudio(from: video)
         defer { MediaFixtures.cleanup([extracted]) }
@@ -60,12 +62,25 @@ struct AudioExtractionIntegrationTests {
         #expect(prepared == audio)
     }
 
+    @Test("prepareAudio throws unsupportedFormat for unrecognized extensions")
+    func prepareAudioRejectsUnsupportedFormat() async throws {
+        let manager = TranscriptionManager()
+        let bogus = MediaFixtures.tempURL(ext: "txt")
+        try Data("not media".utf8).write(to: bogus)
+        defer { MediaFixtures.cleanup([bogus]) }
+
+        await #expect(throws: TranscriptionError.unsupportedFormat("txt")) {
+            _ = try await manager.prepareAudio(from: bogus)
+        }
+    }
+
     @Test("prepareAudio routes video inputs through extraction")
-    func prepareAudioExtractsVideo() async throws {
+    func prepareAudioExtractsAudioFromVideo() async throws {
         let manager = TranscriptionManager()
         let audio = try MediaFixtures.makeToneAudio(duration: 0.5)
+        defer { MediaFixtures.cleanup([audio]) }
         let video = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: "mp4")
-        defer { MediaFixtures.cleanup([audio, video]) }
+        defer { MediaFixtures.cleanup([video]) }
 
         let prepared = try await manager.prepareAudio(from: video)
         defer { MediaFixtures.cleanup([prepared]) }
@@ -73,6 +88,16 @@ struct AudioExtractionIntegrationTests {
         #expect(prepared != video)
         #expect(prepared.pathExtension == "m4a")
         try await assertAudioFileIsUsable(prepared, sourceDuration: 0.5)
+    }
+
+    @Test(
+        "makeToneAudio rejects degenerate durations instead of trapping",
+        arguments: [0, -1, .infinity, .nan] as [TimeInterval]
+    )
+    func makeToneAudioRejectsDegenerateDuration(duration: TimeInterval) {
+        #expect(throws: MediaFixtureError.self) {
+            _ = try MediaFixtures.makeToneAudio(duration: duration)
+        }
     }
 
     // MARK: Helpers

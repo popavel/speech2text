@@ -5,10 +5,12 @@ import Foundation
 
 enum MediaFixtureError: Error {
     case synthesizerFailed
+    case synthesizerTimedOut
     case noAudioTrack
     case writerFailed
     case readerFailed
     case pixelBufferFailed
+    case toneGenerationFailed
 }
 
 // MARK: - MediaFixtures
@@ -32,16 +34,32 @@ enum MediaFixtures {
     static func makeToneAudio(duration: TimeInterval = 1.5, ext: String = "wav") throws -> URL {
         let url = tempURL(ext: ext)
         let sampleRate = 16000.0
-        let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: false
-        )!
-        let frameCount = AVAudioFrameCount(sampleRate * duration)
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+        // Throw rather than trap on a degenerate duration (a force-unwrap on a
+        // nil buffer would abort the whole test process). Validate the frame
+        // count is finite and in range *before* converting to UInt32 — negative,
+        // zero, NaN, infinite, and overflowing values all trap that conversion.
+        let rawFrameCount = sampleRate * duration
+        guard rawFrameCount.isFinite,
+              rawFrameCount >= 1,
+              rawFrameCount <= Double(AVAudioFrameCount.max)
+        else {
+            throw MediaFixtureError.toneGenerationFailed
+        }
+        let frameCount = AVAudioFrameCount(rawFrameCount)
+        guard let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: sampleRate,
+                channels: 1,
+                interleaved: false
+              ),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)
+        else {
+            throw MediaFixtureError.toneGenerationFailed
+        }
         buffer.frameLength = frameCount
-        let channel = buffer.floatChannelData![0]
+        guard let channel = buffer.floatChannelData?[0] else {
+            throw MediaFixtureError.toneGenerationFailed
+        }
         let frequency: Float = 440
         let twoPi = 2 * Float.pi
         for i in 0..<Int(frameCount) {
@@ -129,18 +147,29 @@ private final class SpeechFileWriter: @unchecked Sendable {
         self.url = url
     }
 
-    func synthesize(text: String) async throws {
+    func synthesize(text: String, timeout: TimeInterval = 30) async throws {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             let utterance = AVSpeechUtterance(string: text)
             utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
                 ?? AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
             utterance.rate = AVSpeechUtteranceDefaultSpeechRate
 
-            var resumed = false
-            let resume: (Error?) -> Void = { error in
-                guard !resumed else { return }
+            // `resume` can be called from the synthesizer's callback queue and
+            // from the timeout below, so guard the one-shot flag with a lock.
+            let lock = NSLock()
+            nonisolated(unsafe) var resumed = false
+            let resume: @Sendable (Error?) -> Void = { error in
+                lock.lock()
+                if resumed { lock.unlock(); return }
                 resumed = true
+                lock.unlock()
                 if let error { cont.resume(throwing: error) } else { cont.resume() }
+            }
+
+            // Backstop: if the synthesizer never delivers a terminal empty buffer
+            // (e.g. no usable voice on a CI runner), don't hang the suite forever.
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                resume(MediaFixtureError.synthesizerTimedOut)
             }
 
             synth.write(utterance) { [weak self] buffer in
@@ -152,9 +181,13 @@ private final class SpeechFileWriter: @unchecked Sendable {
                     resume(MediaFixtureError.synthesizerFailed)
                     return
                 }
-                // The synthesizer signals completion with an empty buffer.
+                // The synthesizer signals completion with an empty buffer. If no
+                // audio was ever written (e.g. no usable voice on a CI runner
+                // produced only this terminal buffer), fail instead of reporting
+                // success — otherwise we'd hand back a URL to a file that doesn't
+                // exist and the failure would surface far downstream.
                 if pcm.frameLength == 0 {
-                    resume(nil)
+                    resume(self.audioFile == nil ? MediaFixtureError.synthesizerFailed : nil)
                     return
                 }
                 do {
@@ -290,6 +323,11 @@ private final class VideoComposer: @unchecked Sendable {
         adaptor: AVAssetWriterInputPixelBufferAdaptor,
         duration: CMTime
     ) async throws {
+        // Keep fps low. Raising it produces many more frames for multi-second
+        // speech videos, which stalls the shared-pixel-buffer pump below and hangs
+        // makeVideoWithAudio (the short tone videos in the extraction tests have
+        // too few frames to trip it). Honoring sub-second durations more precisely
+        // isn't worth that risk for an all-black fixture.
         let fps: Int32 = 2
         let totalFrames = max(2, Int(duration.seconds * Double(fps)))
         let frameDuration = CMTime(value: 1, timescale: fps)
