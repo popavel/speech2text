@@ -22,6 +22,10 @@ struct ContentView: View {
                 statusRow
             }
 
+            if !manager.skippedFileNames.isEmpty {
+                warningRow(skippedFilesMessage(manager.skippedFileNames))
+            }
+
             if case .transcribing(let progress) = manager.status, progress > 0 {
                 ProgressView(value: progress)
             }
@@ -39,6 +43,7 @@ struct ContentView: View {
             allowedContentTypes: [.audio, .movie],
             allowsMultipleSelection: true
         ) { result in
+            guard !manager.isProcessing else { return }
             if case .success(let urls) = result {
                 manager.addFiles(urls)
             }
@@ -66,7 +71,7 @@ struct ContentView: View {
                 Text("Drop audio or video files here")
                     .font(.headline)
                     .foregroundStyle(.secondary)
-                Text("mp3, wav, m4a, flac, mp4, mov, mkv...")
+                Text(Self.supportedFormatsCaption)
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                 Button("Browse Files") {
@@ -79,9 +84,11 @@ struct ContentView: View {
         }
         .frame(height: 150)
         .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
+            guard !manager.isProcessing else { return false }
             loadDroppedFiles(from: providers)
             return true
         }
+        .disabled(manager.isProcessing)
     }
 
     // MARK: - File List
@@ -112,6 +119,9 @@ struct ContentView: View {
                 }
             }
         }
+        // Don't let "Clear All" / per-file removal mutate the queue while a run
+        // is iterating it — that would leave an inconsistent completed state.
+        .disabled(manager.isProcessing)
     }
 
     private func fileChip(url: URL, index: Int) -> some View {
@@ -223,6 +233,22 @@ struct ContentView: View {
         }
     }
 
+    private func warningRow(_ message: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.orange)
+            Spacer()
+        }
+    }
+
+    private func skippedFilesMessage(_ names: [String]) -> String {
+        let label = names.count == 1 ? "file" : "files"
+        return "Unsupported \(label) skipped: \(names.joined(separator: ", "))"
+    }
+
     // MARK: - Results
 
     private var resultSection: some View {
@@ -277,17 +303,35 @@ struct ContentView: View {
         }
     }
 
+    // Derived from the manager's canonical sets so the UI never advertises or
+    // icons a format the app doesn't actually accept. Static so the union/sort
+    // runs once rather than on every render.
+    private static let supportedFormatsCaption: String =
+        TranscriptionManager.supportedAudioExtensions
+            .union(TranscriptionManager.supportedVideoExtensions)
+            .sorted()
+            .joined(separator: ", ")
+
     private func iconName(for url: URL) -> String {
-        let videoExts: Set<String> = ["mp4", "mov", "avi", "mkv", "webm", "m4v"]
-        return videoExts.contains(url.pathExtension.lowercased()) ? "film" : "music.note"
+        TranscriptionManager.mediaKind(for: url) == .video ? "film" : "music.note"
     }
 
     private func loadDroppedFiles(from providers: [NSItemProvider]) {
-        for provider in providers {
-            Task {
+        // Resolve every provider, then hand the whole drop to addFiles in a
+        // single call. Adding one file at a time would let each call's
+        // skipped-files bookkeeping overwrite the previous one's.
+        Task {
+            var urls: [URL] = []
+            for provider in providers {
                 if let url = await fileURL(from: provider) {
-                    manager.addFiles([url])
+                    urls.append(url)
                 }
+            }
+            // Resolving providers is async, so a transcription may have started
+            // since the drop was accepted — re-check before mutating the queue.
+            guard !manager.isProcessing else { return }
+            if !urls.isEmpty {
+                manager.addFiles(urls)
             }
         }
     }
