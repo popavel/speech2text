@@ -88,8 +88,9 @@ pieces run on GitHub's runners.
 - All bot workflows authenticate the model via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret
   (subscription auth, not a pay-as-you-go API key — generate with `claude setup-token`).
 - **WhisperKit drift check** — [.github/workflows/whisperkit-drift.yml](.github/workflows/whisperkit-drift.yml)
-  runs weekly: resolves to the latest WhisperKit `main`, builds + tests, and opens a PR if
-  still green or files an issue (tagging `@claude`) if upstream drift broke the build.
+  runs weekly: re-resolves to the latest WhisperKit release within the pinned major, builds +
+  tests, and opens a PR if still green or files an issue (tagging `@claude`) if upstream drift
+  broke the build. (A new major isn't picked up by `from:` — that needs a manual bump.)
 
 ## Architecture
 
@@ -103,7 +104,7 @@ Three Swift files do all the real work; the UI is intentionally thin.
 
 **WhisperKit models** are downloaded on first use into a per-user cache (not bundled). First run with a given model can be slow. `*.bin` and `*.mlmodelc` are gitignored.
 
-**WhisperKit dependency** in `project.yml` tracks `branch: main` (not a pinned version). Be aware when debugging upstream API drift.
+**WhisperKit dependency** in `project.yml` tracks the latest release via `from: "1.0.0"` (SwiftPM up-to-next-major — newest `1.x` release, never a breaking `2.0`). Major bumps are manual; the weekly drift check covers `1.x` drift. Be aware when debugging upstream API drift.
 
 ## Platform constraints
 

@@ -7,7 +7,7 @@ options:
 packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
-    branch: main
+    from: "1.0.0"
 targets:
   Speech2Text:
     type: application
