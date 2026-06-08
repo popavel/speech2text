@@ -61,6 +61,12 @@ jobs:
           xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
             -configuration Debug -destination 'platform=macOS' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | xcbeautify
+          # Un-gate the end-to-end WhisperKit suite (downloads the ~75 MB tiny model
+          # and actually transcribes) — otherwise the drift check would only prove
+          # WhisperKit still *compiles*, not that it still *runs*, which is the whole
+          # point of catching upstream drift. xcodebuild forwards env vars prefixed
+          # TEST_RUNNER_ to the test process with the prefix stripped (→ RUN_WHISPERKIT_TESTS).
+          TEST_RUNNER_RUN_WHISPERKIT_TESTS=1 \
           xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
             -destination 'platform=macOS' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test | xcbeautify
