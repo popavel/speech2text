@@ -16,27 +16,49 @@ on:
   issues:
     types: [opened, assigned]
 
+# One general-bot run per issue/PR.
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
-  claude:
-    # Only run when a TRUSTED user (repo owner, org member, or invited
-    # collaborator) actually mentions @claude. The author_association guard stops
-    # outsiders from invoking the bot and spending your subscription quota.
-    # `@claude fix` is excluded here — that command is handled by claude-fix.yml.
+  # Cheap ubuntu gate: only spin the macOS runner for a genuine, word-boundary
+  # "@claude" mention that is NOT "@claude fix" (the fixer owns those). The
+  # job-level `if:` is the (expression-only) author_association allowlist; the
+  # step does the boundary matching that `contains()` cannot.
+  gate:
+    runs-on: ubuntu-latest
     if: |
       (github.event_name == 'issue_comment' &&
-        contains(github.event.comment.body, '@claude') &&
-        !contains(github.event.comment.body, '@claude fix') &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
       (github.event_name == 'pull_request_review_comment' &&
-        contains(github.event.comment.body, '@claude') &&
-        !contains(github.event.comment.body, '@claude fix') &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
       (github.event_name == 'pull_request_review' &&
-        contains(github.event.review.body, '@claude') &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)) ||
       (github.event_name == 'issues' &&
-        (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
+    outputs:
+      proceed: ${{ steps.match.outputs.proceed }}
+    steps:
+      - name: Match a bare "@claude" mention (excluding "@claude fix")
+        id: match
+        # Text via env (not inlined) to avoid shell injection from user content.
+        # For `issues`, the mention may be in the body or the title.
+        env:
+          BODY: ${{ github.event.comment.body || github.event.review.body || format('{0} {1}', github.event.issue.body, github.event.issue.title) }}
+        run: |
+          mention='(^|[^[:alnum:]_])@claude([^[:alnum:]_]|$)'
+          fix='(^|[^[:alnum:]_])@claude[[:space:]]+fix([^[:alnum:]_]|$)'
+          if printf '%s' "$BODY" | grep -Eiq "$mention" \
+             && ! printf '%s' "$BODY" | grep -Eiq "$fix"; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  claude:
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
     runs-on: macos-26
     permissions:
       contents: write

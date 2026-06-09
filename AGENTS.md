@@ -76,15 +76,21 @@ pieces run on GitHub's runners.
   loop in its own context (keeps `xcodebuild` logs out of the main thread); [test-author](.claude/agents/test-author.md)
   writes the failing Swift Testing test first.
 - **`@claude` bot** — [.github/workflows/claude.yml](.github/workflows/claude.yml) responds to
-  `@claude` mentions on issues/PRs (excluding `@claude fix`, which the fixer handles).
+  `@claude` mentions on issues/PRs (excluding `@claude fix`, which the fixer handles). A cheap
+  ubuntu **gate job** does the word-boundary match (so `@claude fixate`/negated mentions don't
+  trigger) before the macOS job runs.
 - **PR review + fix loop (human-in-the-loop)** — [claude-code-review.yml](.github/workflows/claude-code-review.yml)
-  runs `/code-review max --comment` (multi-agent, inline comments) on every PR push. A **human
-  maintainer** then comments `@claude fix` to invoke [claude-fix.yml](.github/workflows/claude-fix.yml),
-  which in one macOS run applies the findings, builds + tests them (green gate — a broken fix is not
-  pushed), pushes, and re-runs the max review. The review bot itself can't trigger the fixer
-  (`author_association` + GitHub's `GITHUB_TOKEN` loop-prevention block that by design). Build/test/
-  re-review run inline, so no PAT is needed. The fixer commits via a workflow step, not a Claude tool
-  call, so the local commit guard doesn't apply in CI.
+  runs `/code-review --comment` (inline PR comments via the `github_inline_comment` MCP tool,
+  which must stay in the step's `--allowedTools`) on every PR push; a new push cancels the stale
+  in-flight review (`concurrency`). A **human maintainer** then comments `@claude fix` to invoke
+  [claude-fix.yml](.github/workflows/claude-fix.yml), which in one macOS run applies the findings,
+  builds + tests them (green gate — a broken fix is not pushed), pushes, and re-runs the review.
+  It skips build/commit/re-review entirely when Claude made no edits, gates on the same boundary
+  match as the bot, and accepts `@claude fix` from issue comments, inline review comments, or a
+  review summary. The review bot itself can't trigger the fixer (`author_association` + GitHub's
+  `GITHUB_TOKEN` loop-prevention block that by design). Build/test/re-review run inline, so no PAT
+  is needed. The fixer commits via a workflow step, not a Claude tool call, so the local commit
+  guard doesn't apply in CI.
 - All bot workflows authenticate the model via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret
   (subscription auth, not a pay-as-you-go API key — generate with `claude setup-token`).
 - **WhisperKit drift check** — [.github/workflows/whisperkit-drift.yml](.github/workflows/whisperkit-drift.yml)
