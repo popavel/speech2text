@@ -80,6 +80,15 @@ jobs:
             echo "WhisperKit release unchanged since last resolve — nothing to do."
             exit 0
           fi
+          # Don't stack drift PRs: if a previous week's bump is still open, leave it.
+          # (Mirrors the issue-path dedup below.)
+          existing=$(gh pr list --state open \
+            --search "WhisperKit release bump (drift check) in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "Open drift PR #$existing already exists — skipping."
+            exit 0
+          fi
           branch="chore/whisperkit-drift-${{ github.run_id }}"
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
