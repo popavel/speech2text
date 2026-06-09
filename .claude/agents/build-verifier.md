@@ -17,7 +17,7 @@ Workflow:
 2. Build, then (only if the build passes) test, with code signing off:
 
    ```bash
-   set -o pipefail
+   set -eo pipefail   # -e so a failed build aborts before the test command runs
    xcodebuild -project Speech2Text.xcodeproj -scheme Speech2Text \
      -configuration Debug -destination 'platform=macOS' \
      CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build \
@@ -31,11 +31,13 @@ Workflow:
 
 3. On failure, read the error, edit the **source** to fix it, and rebuild. Repeat
    until green. Watch for Swift 6 strict-concurrency / `@MainActor` actor-boundary
-   errors and WhisperKit `branch: main` API drift — those are the common breakages.
+   errors and WhisperKit `from: "1.0.0"` upstream API drift (1.x release bumps) —
+   those are the common breakages.
 
 Hard rules:
 - **Fix the code, not the test.** Never delete, skip, or weaken a failing test to
   make it pass. If a test looks genuinely wrong, stop and say so — do not change it.
-- Do not run `git commit` (it is reserved for the human and blocked by a hook).
+- Do not run `git commit` — the main agent commits via `/precommit`; a hook blocks
+  direct agent commits.
 - Keep your final reply short: PASS/FAIL, the files you touched, and any test still
   red with the one-line reason. Do not paste full build logs.

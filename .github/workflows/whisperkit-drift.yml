@@ -9,6 +9,12 @@ name: WhisperKit Drift Check
 # NOTE: `from:` never crosses a major boundary, so a new major (e.g. v2.0.0) is NOT
 # picked up here — that requires a manual `from:` bump in project.yml. This check
 # covers 1.x drift only.
+#
+# GITHUB_TOKEN limits (intentional — no PAT): both the PR and the issue below are
+# created with the Actions token, so GitHub's loop-prevention means the PR carries
+# NO status checks of its own (the build + test ran in THIS job, not on the PR) and
+# the issue's "@claude" mention does NOT auto-summon the bot. A maintainer reviews /
+# re-runs CI on the PR, and re-invokes @claude on the issue.
 on:
   schedule:
     - cron: '0 6 * * 1'   # Mondays 06:00 UTC
@@ -52,10 +58,10 @@ jobs:
       - name: Resolve to latest WhisperKit release
         id: resolve
         # Drift can break package RESOLUTION (new swift-tools-version, transitive
-        # conflict, yanked release), not just the build. Without continue-on-error
-        # the step fails hard and the File-issue path (which carries an implicit
-        # success()) never runs — a silent miss. Keeping the job green lets the
-        # outcome checks below route a resolve failure to the issue path.
+        # conflict, yanked release), not just the build. continue-on-error keeps the
+        # job green so the verify step's `if: steps.resolve.outcome == 'success'` gate
+        # works and the outcome checks below can route a resolve failure to the issue
+        # path (the File-issue step uses always(), so it fires even on a hard failure).
         continue-on-error: true
         run: |
           set -o pipefail
@@ -114,10 +120,14 @@ jobs:
           git push origin "$branch"
           gh pr create --base main --head "$branch" \
             --title "chore: WhisperKit release bump (drift check passed)" \
-            --body "Automated weekly WhisperKit drift check. A newer release within the pinned major (\`from: \"1.0.0\"\`) is available and the app still **builds + tests green** against it. Merging keeps \`Package.resolved\` current."
+            --body "Automated weekly WhisperKit drift check. A newer release within the pinned major (\`from: \"1.0.0\"\`) is available and the app still **builds + tests green** against it (verified in the drift job — note this bot-opened PR carries no status checks of its own; re-run CI or push a commit if branch protection requires them). Merging keeps \`Package.resolved\` current."
 
       - name: File issue (drift broke the check)
-        if: steps.resolve.outcome == 'failure' || steps.verify.outcome == 'failure'
+        # always() + "anything but the fully-green path" so a CANCELLED verify
+        # (timeout/infra) AND a failure in an earlier step (checkout/brew/xcodegen,
+        # which abort the job) still file/append the issue instead of silently
+        # producing neither a PR nor an issue.
+        if: always() && (steps.resolve.outcome != 'success' || steps.verify.outcome != 'success')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -133,4 +143,4 @@ jobs:
             '' \
             "Run logs: $run_url" \
             '' \
-            '@claude please investigate the failure and open a PR that adapts our WhisperKit usage to the upstream changes.')"
+            'A maintainer should investigate (this issue was filed by the Actions token, which GitHub does not let trigger workflows, so the bot is not auto-invoked). Comment "@claude" here to dispatch it to adapt our WhisperKit usage to the upstream changes.')"
