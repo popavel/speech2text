@@ -14,6 +14,13 @@ on:
     - cron: '0 6 * * 1'   # Mondays 06:00 UTC
   workflow_dispatch:
 
+# Serialize drift runs so a manual dispatch racing the weekly cron can't both
+# pass the open-PR dedup check and open duplicate PRs. Queue (not cancel) so an
+# in-flight build+test finishes.
+concurrency:
+  group: whisperkit-drift
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
@@ -43,6 +50,13 @@ jobs:
         run: xcodegen generate
 
       - name: Resolve to latest WhisperKit release
+        id: resolve
+        # Drift can break package RESOLUTION (new swift-tools-version, transitive
+        # conflict, yanked release), not just the build. Without continue-on-error
+        # the step fails hard and the File-issue path (which carries an implicit
+        # success()) never runs — a silent miss. Keeping the job green lets the
+        # outcome checks below route a resolve failure to the issue path.
+        continue-on-error: true
         run: |
           set -o pipefail
           # Drop the pinned Package.resolved first: a plain resolve honors the
@@ -55,6 +69,8 @@ jobs:
 
       - name: Build & test against latest release
         id: verify
+        # Skip the doomed build if resolution already failed (handled below).
+        if: steps.resolve.outcome == 'success'
         continue-on-error: true
         run: |
           set -o pipefail
@@ -72,7 +88,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test | xcbeautify
 
       - name: Open PR (still green)
-        if: steps.verify.outcome == 'success'
+        if: steps.resolve.outcome == 'success' && steps.verify.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -100,12 +116,12 @@ jobs:
             --title "chore: WhisperKit release bump (drift check passed)" \
             --body "Automated weekly WhisperKit drift check. A newer release within the pinned major (\`from: \"1.0.0\"\`) is available and the app still **builds + tests green** against it. Merging keeps \`Package.resolved\` current."
 
-      - name: File issue (build broke)
-        if: steps.verify.outcome == 'failure'
+      - name: File issue (drift broke the check)
+        if: steps.resolve.outcome == 'failure' || steps.verify.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          title="WhisperKit release drift broke the build"
+          title="WhisperKit release drift broke the check"
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
@@ -113,8 +129,8 @@ jobs:
             exit 0
           fi
           gh issue create --title "$title" --body "$(printf '%s\n' \
-            'The weekly WhisperKit drift check failed: building/testing against the latest `argmaxinc/WhisperKit` release (within the pinned major) no longer passes — likely upstream API drift.' \
+            'The weekly WhisperKit drift check failed: resolving, building, or testing against the latest `argmaxinc/WhisperKit` release (within the pinned major) no longer passes — likely upstream API drift.' \
             '' \
             "Run logs: $run_url" \
             '' \
-            '@claude please investigate the build failure and open a PR that adapts our WhisperKit usage to the upstream changes.')"
+            '@claude please investigate the failure and open a PR that adapts our WhisperKit usage to the upstream changes.')"
