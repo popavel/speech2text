@@ -6,7 +6,7 @@ name: Claude Fix
 #   1. applies the open review findings,
 #   2. builds + tests them (green gate — a broken fix is NOT pushed),
 #   3. pushes the fix to the PR branch,
-#   4. re-runs the max-effort review.
+#   4. re-runs the review.
 # Doing build/test/review inline means NO PAT is needed: we don't rely on the
 # push to re-trigger other workflows (GitHub suppresses workflow triggers from
 # GITHUB_TOKEN pushes). It's the CI-side mirror of the local /precommit loop.
@@ -125,7 +125,10 @@ jobs:
       - name: Detect changes
         id: changes
         run: |
-          if git diff --quiet && git diff --cached --quiet; then
+          # --porcelain reports untracked files too (a fix may ADD a new
+          # source/test file); plain `git diff` misses those, silently dropping
+          # the fix. Gitignored model blobs are not reported, so they don't count.
+          if [ -z "$(git status --porcelain)" ]; then
             echo "dirty=false" >> "$GITHUB_OUTPUT"
             echo "No edits from Claude — skipping build/commit/re-review."
           else
