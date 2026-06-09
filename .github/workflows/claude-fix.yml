@@ -42,6 +42,9 @@ jobs:
   # so "@claude fixate", "@claude fixes", and negated mentions do NOT trigger.
   gate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # to comment "fork PRs unsupported" and skip the run
     if: |
       (github.event_name == 'issue_comment' &&
         github.event.issue.pull_request &&
@@ -60,12 +63,27 @@ jobs:
         env:
           BODY: ${{ github.event.comment.body || github.event.review.body }}
           PR: ${{ github.event.issue.number || github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if printf '%s' "$BODY" | grep -Eiq '(^|[^[:alnum:]_])@claude[[:space:]]+fix([^[:alnum:]_]|$)'; then
-            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          # Drop quoted lines (GitHub "Quote reply" prefixes them with "> ") so a
+          # quote of an earlier "@claude fix" doesn't re-trigger the fixer.
+          body_unquoted=$(printf '%s\n' "$BODY" | grep -v '^[[:space:]]*>' || true)
+          if printf '%s' "$body_unquoted" | grep -Eiq '(^|[^[:alnum:]_])@claude[[:space:]]+fix([^[:alnum:]_]|$)'; then
+            proceed=true
           else
-            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            proceed=false
           fi
+          # The fixer pushes to the PR branch; with the base-repo GITHUB_TOKEN it
+          # cannot push to a fork. Skip fork PRs here (and say so) instead of burning
+          # a macOS build that would only fail at `git push`.
+          if [ "$proceed" = "true" ] && [ -n "$PR" ]; then
+            fork=$(gh pr view "$PR" --json isCrossRepository --jq '.isCrossRepository' 2>/dev/null || echo "")
+            if [ "$fork" = "true" ]; then
+              gh pr comment "$PR" --body "🤖 The automated \`@claude fix\` workflow does not support pull requests from forks — it cannot push fixes to a fork's branch. Apply the review findings locally with \`/fix-pr\`, or push the branch to this repo." || true
+              proceed=false
+            fi
+          fi
+          echo "proceed=$proceed" >> "$GITHUB_OUTPUT"
           echo "pr=$PR" >> "$GITHUB_OUTPUT"
 
   fix:

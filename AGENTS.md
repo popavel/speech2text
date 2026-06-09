@@ -53,7 +53,7 @@ Every code change follows this loop. Do not skip steps.
 
 Hooks in [.claude/settings.json](.claude/settings.json) enforce the branch and commit rules; the rest is on you. If a hook denies an action, the message tells you what to do next.
 
-The commit guard ([.claude/hooks/commit-guard.sh](.claude/hooks/commit-guard.sh)) is a guardrail, not an adversarial sandbox. It reads the Bash command from the hook's stdin and acts only on a real `git commit` at a word boundary — including when followed by `;`, `|`, `&`, `>`, or end-of-line — while leaving `git commit-tree`, `git committed`, and unrelated commands alone. For a matched agent commit it denies on `main`/`master`, and on a feature branch denies unless a review marker (`<git-dir>/precommit-review.ok`) equals the SHA-256 of the staged tree (`git diff --cached HEAD`). `/precommit` writes that marker after a clean final review, so the marker is invalidated by any later change to the staged tree — forcing a re-review. It is a guardrail because the marker attests *a review ran on this exact code*, not that the review was thorough. Known gaps: global options *between* `git` and `commit` (e.g. `git -c user.name=x commit`) aren't matched (would need full shell tokenization), and brand-new files aren't part of the hash until staged.
+The commit guard ([.claude/hooks/commit-guard.sh](.claude/hooks/commit-guard.sh)) is a guardrail, not an adversarial sandbox. It reads the Bash command from the hook's stdin and acts only on a real `git commit` at a *command position* — the start of a line (matched per line, so newline-separated commands count) or right after a separator (`;`, `&`, `|`, `(`, or command substitution) — while leaving `git commit-tree`, `git committed`, quoted/echoed mentions of the words "git commit", and unrelated commands alone. For a matched agent commit it denies on `main`/`master`; refuses working-tree staging flags (`git commit -a`/`--all`/`--patch`/`--include`, which would record changes outside the reviewed index); and on a feature branch denies unless a review marker (`<git-dir>/precommit-review.ok`) equals the SHA-256 of the staged tree (`git diff --cached HEAD`). `/precommit` writes that marker after a clean final review, so the marker is invalidated by any later change to the staged tree — forcing a re-review. It is a guardrail because the marker attests *a review ran on this exact code*, not that the review was thorough. Known gaps: global options *between* `git` and `commit` (`git -c user.name=x commit`, `git -C <dir> commit`) and command wrappers (`time git commit`, `{ git commit; }`) aren't matched (would need full shell tokenization — env-var prefixes like `GIT_DIR=… git commit` *are* caught); brand-new files aren't part of the hash until staged; and a literal ` -a ` inside a commit message is conservatively refused.
 
 ## Automation helpers
 
@@ -95,8 +95,11 @@ pieces run on GitHub's runners.
   (subscription auth, not a pay-as-you-go API key — generate with `claude setup-token`).
 - **WhisperKit drift check** — [.github/workflows/whisperkit-drift.yml](.github/workflows/whisperkit-drift.yml)
   runs weekly: re-resolves to the latest WhisperKit release within the pinned major, builds +
-  tests, and opens a PR if still green or files an issue (tagging `@claude`) if upstream drift
-  broke the build. (A new major isn't picked up by `from:` — that needs a manual bump.)
+  tests, and opens a PR if still green or files an issue (mentioning `@claude`) if upstream drift
+  broke the build. (A new major isn't picked up by `from:` — that needs a manual bump.) Because
+  both are raised with the Actions `GITHUB_TOKEN`, the PR carries no status checks of its own (the
+  build/test ran in the drift job) and the issue's `@claude` mention isn't auto-triggered — a
+  maintainer re-runs CI / re-invokes `@claude`.
 
 ## Architecture
 

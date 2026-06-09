@@ -14,7 +14,10 @@ on:
   pull_request_review:
     types: [submitted]
   issues:
-    types: [opened, assigned]
+    # `opened` only — NOT `assigned`: the gate matches @claude in the issue
+    # body/title, which is unchanged across (re)assignments, so `assigned` would
+    # re-fire the macOS bot on every assignment of an @claude issue.
+    types: [opened]
 
 # One general-bot run per issue/PR.
 concurrency:
@@ -43,14 +46,29 @@ jobs:
       - name: Match a bare "@claude" mention (excluding "@claude fix")
         id: match
         # Text via env (not inlined) to avoid shell injection from user content.
-        # For `issues`, the mention may be in the body or the title.
         env:
-          BODY: ${{ github.event.comment.body || github.event.review.body || format('{0} {1}', github.event.issue.body, github.event.issue.title) }}
+          # A comment/review body can be a "> @claude" quote-reply; an issue
+          # body/title cannot. Keep them separate so quote-stripping the body never
+          # consumes the title (format()-joining them would put the title on the
+          # body's last line, where a trailing quote line would strip it too).
+          COMMENT_BODY: ${{ github.event.comment.body || github.event.review.body }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
           mention='(^|[^[:alnum:]_])@claude([^[:alnum:]_]|$)'
           fix='(^|[^[:alnum:]_])@claude[[:space:]]+fix([^[:alnum:]_]|$)'
-          if printf '%s' "$BODY" | grep -Eiq "$mention" \
-             && ! printf '%s' "$BODY" | grep -Eiq "$fix"; then
+          # Strip quoted ("> ...") lines so a quote-reply doesn't re-trigger the bot.
+          # The issues event has no comment body: match the (quote-stripped) issue
+          # body PLUS the title on its own line, so a quoted last body line can't
+          # swallow a title mention.
+          if [ -n "$COMMENT_BODY" ]; then
+            haystack=$(printf '%s\n' "$COMMENT_BODY" | grep -v '^[[:space:]]*>' || true)
+          else
+            body_unquoted=$(printf '%s\n' "$ISSUE_BODY" | grep -v '^[[:space:]]*>' || true)
+            haystack=$(printf '%s\n%s' "$body_unquoted" "$ISSUE_TITLE")
+          fi
+          if printf '%s' "$haystack" | grep -Eiq "$mention" \
+             && ! printf '%s' "$haystack" | grep -Eiq "$fix"; then
             echo "proceed=true" >> "$GITHUB_OUTPUT"
           else
             echo "proceed=false" >> "$GITHUB_OUTPUT"

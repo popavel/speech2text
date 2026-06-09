@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/commit-guard.sh\""
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/commit-guard.sh\" || jq -nc '{hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"commit-guard.sh failed to run — denying to fail closed. Check that .claude/hooks/commit-guard.sh exists and is readable.\"}}'"
           }
         ]
       }

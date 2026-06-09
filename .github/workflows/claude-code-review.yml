@@ -11,6 +11,11 @@ name: Claude Code Review
 # Cost note: the review fans out subagents on EVERY push (synchronize). The
 # concurrency block below cancels a superseded review when a new push lands; if it
 # is still too heavy, drop `synchronize` from the triggers (review only on `opened`).
+#
+# Fork PRs: this uses `pull_request` (NOT `pull_request_target`), so a PR from a fork
+# runs with no secrets and a read-only token — the review silently no-ops on forks.
+# That is intentional: `pull_request_target` would run untrusted fork code with our
+# secrets. Same-repo (feature/**) PRs are the supported path.
 on:
   pull_request:
     types: [opened, synchronize]
