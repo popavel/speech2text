@@ -2,9 +2,23 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
-    @State private var manager = TranscriptionManager()
+    @State private var manager: TranscriptionManager
     @State private var isDragTargeted = false
     @State private var showFileImporter = false
+
+    init() {
+        let manager = TranscriptionManager()
+        #if DEBUG
+        manager.applyUITestSeamIfPresent()
+        #endif
+        _manager = State(initialValue: manager)
+    }
+
+    /// Test seam: inject a pre-configured manager so view tests can set up state
+    /// (files, status, results) before inspecting the rendered hierarchy.
+    init(manager: TranscriptionManager) {
+        _manager = State(initialValue: manager)
+    }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -80,6 +94,7 @@ struct ContentView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .keyboardShortcut("o")
+                .accessibilityIdentifier("browseFilesButton")
             }
         }
         .frame(height: 150)
@@ -106,6 +121,7 @@ struct ContentView: View {
                 .font(.caption)
                 .buttonStyle(.plain)
                 .foregroundStyle(.red)
+                .accessibilityIdentifier("clearAllButton")
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -139,10 +155,12 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("removeFileButton")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(Color.secondary.opacity(0.1), in: Capsule())
+        .accessibilityIdentifier("fileChip")
     }
 
     // MARK: - Controls
@@ -160,6 +178,7 @@ struct ContentView: View {
                 }
                 .labelsHidden()
                 .frame(width: 160)
+                .accessibilityIdentifier("languagePicker")
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -173,6 +192,7 @@ struct ContentView: View {
                 }
                 .labelsHidden()
                 .frame(width: 260)
+                .accessibilityIdentifier("modelPicker")
             }
 
             Spacer()
@@ -202,6 +222,7 @@ struct ContentView: View {
             .controlSize(.large)
             .disabled(!manager.canTranscribe)
             .keyboardShortcut(.return, modifiers: .command)
+            .accessibilityIdentifier("transcribeButton")
         }
     }
 
@@ -228,6 +249,7 @@ struct ContentView: View {
             Text(manager.statusMessage)
                 .font(.callout)
                 .foregroundStyle(statusColor)
+                .accessibilityIdentifier("statusText")
 
             Spacer()
         }
@@ -240,6 +262,7 @@ struct ContentView: View {
             Text(message)
                 .font(.callout)
                 .foregroundStyle(.orange)
+                .accessibilityIdentifier("skippedWarning")
             Spacer()
         }
     }
@@ -269,6 +292,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .accessibilityIdentifier("copyButton")
 
                 Button {
                     exportText()
@@ -277,6 +301,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .accessibilityIdentifier("exportButton")
             }
 
             TextEditor(text: $manager.transcriptionResult)
@@ -290,6 +315,7 @@ struct ContentView: View {
                         .strokeBorder(Color.secondary.opacity(0.2))
                 )
                 .frame(minHeight: 150, maxHeight: .infinity)
+                .accessibilityIdentifier("resultTextEditor")
         }
     }
 

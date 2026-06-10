@@ -1,0 +1,46 @@
+name: UI Tests (XCUITest)
+
+# Manual-only. XCUITest launches the app and attaches as a separate process,
+# which requires the runner to be able to (ad-hoc) sign the app + test runner —
+# so unlike every other job here it must NOT pass CODE_SIGNING_ALLOWED=NO (that
+# leaves the runner unsigned and it gets killed before bootstrapping). Headless
+# runners may also hit TCC/Accessibility prompts. Until a green run proves this
+# works on macos-26, it stays workflow_dispatch-only and never gates a PR.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  XCODE_PROJECT: Speech2Text.xcodeproj
+  XCODE_SCHEME: Speech2TextUITests
+
+jobs:
+  ui-tests:
+    name: UI Tests (XCUITest)
+    runs-on: macos-26
+    timeout-minutes: 20        # UI-test hangs (TCC prompts / attach failures) must not burn the runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4.1'
+
+      - name: Install build tools
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Run UI tests
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -destination 'platform=macOS' \
+            test | xcbeautify

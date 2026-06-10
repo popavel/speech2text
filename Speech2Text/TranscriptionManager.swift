@@ -306,3 +306,35 @@ class TranscriptionManager {
         return outputURL
     }
 }
+
+#if DEBUG
+extension TranscriptionManager {
+    /// Reads launch arguments/environment set by XCUITest and seeds state so UI
+    /// tests can exercise the interface without a file dialog, drag-and-drop, or
+    /// loading WhisperKit (which would download a model). No-op unless launched
+    /// with `-uiTesting`, and compiled out of Release builds entirely.
+    func applyUITestSeamIfPresent(
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
+        guard arguments.contains("-uiTesting") else { return }
+
+        // Preload files without a file dialog. `addFiles` filters by extension
+        // only (it never stats the file), so synthetic paths render chips and
+        // enable Transcribe without touching disk.
+        if let joined = environment["UITEST_PRELOAD_FILES"], !joined.isEmpty {
+            let urls = joined
+                .split(separator: "\n")
+                .map { URL(fileURLWithPath: String($0)) }
+            addFiles(urls)
+        }
+
+        // Stub a finished transcription so the result UI (editor, Copy, Export)
+        // is reachable without running WhisperKit.
+        if let stub = environment["UITEST_STUB_RESULT"] {
+            transcriptionResult = stub
+            status = .completed
+        }
+    }
+}
+#endif
