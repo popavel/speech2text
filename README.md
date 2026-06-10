@@ -126,6 +126,11 @@ GitHub Actions workflows live in `.github/workflows/`:
 
 All three pin Xcode 26.4.1 on a `macos-26` runner and use the same build/test steps.
 
+See [.github/workflows/README.md](.github/workflows/README.md) for a per-workflow overview
+(including the Claude automation) and its known limitations, and
+[.claude/README.md](.claude/README.md) for the local Claude automation — commands, agents, and
+the commit-guard hooks — and its caveats.
+
 ## License
 
 See repository for license details.

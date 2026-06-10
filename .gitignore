@@ -37,3 +37,4 @@ Pods/
 !.claude/commands/
 !.claude/agents/
 !.claude/hooks/
+!.claude/README.md
