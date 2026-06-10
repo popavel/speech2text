@@ -30,9 +30,29 @@ xcodebuild -project Speech2Text.xcodeproj -scheme Speech2Text \
 xcodebuild ... test -only-testing:Speech2TextTests/TranscriptionLanguageTests
 ```
 
-Tests use the **Swift Testing** framework (`@Suite`, `@Test`, `#expect`) — not XCTest. Keep new tests in that style.
+Tests use the **Swift Testing** framework (`@Suite`, `@Test`, `#expect`) — not XCTest. Keep new tests in that style. **One exception:** `Speech2TextUITests` is an XCUITest target, and `XCUIApplication` lives only in XCTest, so those tests are `XCTestCase` subclasses. Don't "fix" them to Swift Testing — there is no Swift Testing equivalent for UI automation.
 
 > **Subsetting tests is limited — `-only-testing` only resolves to the suite, not a single test.** With Swift Testing under `xcodebuild` here, `-only-testing:<Target>/<SuiteStruct>` works, but the single-test form `-only-testing:<Target>/<SuiteStruct>/<testFunc>` silently runs **0 tests** — even with a correct function name (verified against real functions in both `Speech2TextTests` and `Speech2TextIntegrationTests`). To focus on one test, run its whole suite, or run the full suite and `grep` the output. Relatedly, `xcbeautify` swallows parameterized `@Test(arguments:)` cases (they don't show individually and can look like the test never ran); pipe raw `xcodebuild` output through `grep` to confirm they executed.
+
+### UI testing
+
+There are two layers, deliberately split:
+
+- **View-render tests (`Speech2TextTests/ContentViewTests.swift`)** — use [ViewInspector](https://github.com/nalexn/ViewInspector) (a **test-only** SwiftPM dependency, linked into `Speech2TextTests` only, **never** the app target) to assert the SwiftUI hierarchy reflects the injected `TranscriptionManager` state (button enabled/disabled, file chips, status/warning text). They are Swift Testing `@Suite`s, run in-process with **no signing/launch**, so they ride the normal `Speech2Text` scheme test run (including CI). `ContentView` has an `init(manager:)` seam so tests can inject pre-configured state; the zero-arg `init()` is the app/`#Preview` path. Inspect statically (build a fresh view per assertion) — don't reach for `ViewHosting`, which drags in XCTest machinery. Keep view *behavior* (clearFiles, removeFile) tested on the manager directly; ViewInspector covers render only.
+- **XCUITest automation (`Speech2TextUITests`, `bundle.ui-testing`)** — launches the real app and queries controls by `.accessibilityIdentifier(...)`. Run via its **own** scheme, which is kept out of the `Speech2Text` scheme's test action so its flakiness can't gate every build:
+
+  ```bash
+  # NOTE: no CODE_SIGNING_ALLOWED=NO here — see below.
+  xcodebuild -project Speech2Text.xcodeproj -scheme Speech2TextUITests \
+    -destination 'platform=macOS' test | xcbeautify
+  ```
+
+  Three things to know:
+  1. **Signing is required.** Unlike every other command in this repo, UI tests must **not** pass `CODE_SIGNING_ALLOWED=NO` — an unsigned test runner is killed before it can attach (`Test crashed with signal kill before establishing connection`). Let Xcode apply its default (ad-hoc) signature.
+  2. **Never tap Transcribe.** It calls `startTranscription()` → loads WhisperKit (network, model download). UI tests seed state instead via a `#if DEBUG` launch seam on `TranscriptionManager` (`applyUITestSeamIfPresent`, called from `ContentView.init()`): launch with `-uiTesting`, then `UITEST_PRELOAD_FILES` (newline-joined paths — extension-filtered, never stat'd, so synthetic `/tmp/x.mp3` works) preloads the queue and `UITEST_STUB_RESULT` stubs a completed transcription so the result UI is reachable without a model. The seam is compiled out of Release.
+  3. **CI is manual-only.** [.github/workflows/ui-tests.yml](.github/workflows/ui-tests.yml) is `workflow_dispatch`-only — not wired into the feature/main/release pipelines — because the no-signing CI config can't run UI tests and headless TCC/attach behavior on `macos-26` is unproven. Prove a green dispatch run before making it gate anything.
+
+  The app's [Info.plist](Info.plist) carries an explicit `CFBundleIdentifier` (`$(PRODUCT_BUNDLE_IDENTIFIER)`) — XCUITest needs it to identify the target app, and the manual `INFOPLIST_FILE` (no `GENERATE_INFOPLIST_FILE`) wouldn't otherwise inject one.
 
 ## Workflow for code changes
 

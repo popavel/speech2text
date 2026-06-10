@@ -8,6 +8,11 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: "1.0.0"
+  # Test-only: runtime introspection of SwiftUI view bodies. Linked into the
+  # unit-test bundle only — never into the app target.
+  ViewInspector:
+    url: https://github.com/nalexn/ViewInspector.git
+    from: "0.10.3"
 targets:
   Speech2Text:
     type: application
@@ -40,6 +45,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: Speech2Text
+      - package: ViewInspector
 
   Speech2TextIntegrationTests:
     type: bundle.unit-test
@@ -52,3 +58,33 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: Speech2Text
+
+  # End-to-end UI automation. XCUIApplication is XCTest-only — this is the one
+  # target that uses XCTest rather than the repo's Swift Testing convention.
+  # Kept out of the main scheme's test action (see the Speech2TextUITests scheme
+  # below) so its TCC/launch flakiness can't gate every build.
+  Speech2TextUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [Speech2TextUITests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.uitests
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Speech2Text
+    dependencies:
+      - target: Speech2Text
+
+# A dedicated, shared scheme for the UI tests so the default
+# `-scheme Speech2Text test` run never pulls them in. Run explicitly with
+# `-scheme Speech2TextUITests test`.
+schemes:
+  Speech2TextUITests:
+    build:
+      targets:
+        Speech2Text: [run]
+        Speech2TextUITests: [test]
+    test:
+      targets:
+        - Speech2TextUITests
