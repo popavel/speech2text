@@ -8,6 +8,14 @@
 #                                  matches the currently-staged tree
 set -u
 
+# Fail closed if jq is unavailable: without it we can neither parse the command
+# (the detector would match nothing and silently allow) nor emit a deny via
+# deny(). Emit the fixed deny JSON directly — no jq required for this static string.
+if ! command -v jq >/dev/null 2>&1; then
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"commit-guard: jq not found on PATH — denying to fail closed. Install jq so the commit guard can run."}}'
+  exit 0
+fi
+
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
 
