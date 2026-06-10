@@ -42,6 +42,7 @@ jobs:
   # so "@claude fixate", "@claude fixes", and negated mentions do NOT trigger.
   gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 16
     permissions:
       contents: read
       pull-requests: write   # to comment "fork PRs unsupported" and skip the run
@@ -64,6 +65,9 @@ jobs:
           BODY: ${{ github.event.comment.body || github.event.review.body }}
           PR: ${{ github.event.issue.number || github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
+          # gh resolves the repo from GH_REPO (NOT the auto-set GITHUB_REPOSITORY);
+          # this job has no checkout/remote, so without it gh pr view/comment fail.
+          GH_REPO: ${{ github.repository }}
         run: |
           # Drop quoted lines (GitHub "Quote reply" prefixes them with "> ") so a
           # quote of an earlier "@claude fix" doesn't re-trigger the fixer.
@@ -116,9 +120,6 @@ jobs:
       - name: Install build tools
         run: brew install xcodegen xcbeautify
 
-      - name: Generate Xcode project
-        run: xcodegen generate
-
       - name: Apply fixes with Claude
         uses: anthropics/claude-code-action@v1
         with:
@@ -152,6 +153,13 @@ jobs:
           else
             echo "dirty=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # Regenerate the project from any project.yml Claude edited (and pick up new
+      # source/test files) — AFTER change-detection, so xcodegen's regenerated
+      # project.pbxproj never pollutes the "did Claude edit anything?" check above.
+      - name: Generate Xcode project
+        if: steps.changes.outputs.dirty == 'true'
+        run: xcodegen generate
 
       # Green gate: a fix that doesn't build or pass tests fails the job here and
       # is never pushed (mirrors /precommit's "green before commit").

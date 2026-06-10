@@ -17,7 +17,7 @@ jobs:
   build-and-test:
     name: Build & Test (macOS)
     runs-on: macos-26          # Apple Silicon runner with recent Xcodes
-    timeout-minutes: 30        # don't let a stuck encode/build burn the 6h default
+    timeout-minutes: 16        # don't let a stuck encode/build burn the 6h default
 
     steps:
       # 1. Clone the repository into the runner.

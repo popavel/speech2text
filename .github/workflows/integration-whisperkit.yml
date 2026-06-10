@@ -17,7 +17,7 @@ jobs:
   integration-whisperkit:
     name: Integration (WhisperKit)
     runs-on: macos-26
-    timeout-minutes: 30        # a hung HuggingFace download must not run for hours
+    timeout-minutes: 16        # a hung HuggingFace download must not run for hours (model is cached)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
