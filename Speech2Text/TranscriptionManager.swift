@@ -330,8 +330,10 @@ extension TranscriptionManager {
         }
 
         // Stub a finished transcription so the result UI (editor, Copy, Export)
-        // is reachable without running WhisperKit.
-        if let stub = environment["UITEST_STUB_RESULT"] {
+        // is reachable without running WhisperKit. Guard against an empty value
+        // (mirroring the preload guard above) so a blank stub doesn't flip the
+        // status to .completed with nothing to show.
+        if let stub = environment["UITEST_STUB_RESULT"], !stub.isEmpty {
             transcriptionResult = stub
             status = .completed
         }

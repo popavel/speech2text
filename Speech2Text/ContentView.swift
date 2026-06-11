@@ -155,12 +155,12 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("removeFileButton")
+            .accessibilityIdentifier("removeFileButton-\(index)")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(Color.secondary.opacity(0.1), in: Capsule())
-        .accessibilityIdentifier("fileChip")
+        .accessibilityIdentifier("fileChip-\(index)")
     }
 
     // MARK: - Controls
