@@ -72,4 +72,23 @@ struct ContentViewTests {
         let status = try view.inspect().find(viewWithAccessibilityIdentifier: "statusText")
         #expect(try status.text().string() == "Transcription complete")
     }
+
+    @Test("Each file chip exposes a uniquely indexed remove button")
+    func fileChipsHaveIndexedRemoveButtons() throws {
+        let manager = TranscriptionManager()
+        manager.addFiles([
+            URL(fileURLWithPath: "/tmp/a.mp3"),
+            URL(fileURLWithPath: "/tmp/b.wav"),
+        ])
+        let view = ContentView(manager: manager)
+
+        // Per-row identifiers must be unique so an XCUITest can address a single
+        // chip's remove button without a "multiple matching elements" failure.
+        #expect(throws: Never.self) {
+            try view.inspect().find(viewWithAccessibilityIdentifier: "removeFileButton-0")
+        }
+        #expect(throws: Never.self) {
+            try view.inspect().find(viewWithAccessibilityIdentifier: "removeFileButton-1")
+        }
+    }
 }

@@ -308,6 +308,32 @@ struct TranscriptionManagerTests {
         manager.status = .error("boom")
         #expect(manager.statusMessage == "Error: boom")
     }
+
+    // MARK: UI-test launch seam
+
+    #if DEBUG
+    @Test("Launch seam ignores an empty stub result instead of marking completion")
+    func emptyStubResultDoesNotCompleteRun() {
+        let manager = TranscriptionManager()
+        manager.applyUITestSeamIfPresent(
+            arguments: ["-uiTesting"],
+            environment: ["UITEST_STUB_RESULT": ""]
+        )
+        #expect(manager.status == .idle)
+        #expect(manager.transcriptionResult.isEmpty)
+    }
+
+    @Test("Launch seam applies a non-empty stub result")
+    func nonEmptyStubResultCompletesRun() {
+        let manager = TranscriptionManager()
+        manager.applyUITestSeamIfPresent(
+            arguments: ["-uiTesting"],
+            environment: ["UITEST_STUB_RESULT": "hello world"]
+        )
+        #expect(manager.status == .completed)
+        #expect(manager.transcriptionResult == "hello world")
+    }
+    #endif
 }
 
 // MARK: - Supported Extensions Validation
