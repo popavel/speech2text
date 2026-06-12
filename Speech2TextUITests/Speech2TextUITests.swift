@@ -53,8 +53,13 @@ final class Speech2TextUITests: XCTestCase {
         XCTAssertTrue(exists)
         let isEnabled = transcribe.isEnabled
         XCTAssertTrue(isEnabled)
-        let countLabelExists = app.staticTexts["2 file(s) selected"].exists
+        // Locate the label by its stable accessibility id (not the display string),
+        // then assert the rendered value so the count itself is still verified.
+        let countLabel = app.staticTexts["fileCountLabel"]
+        let countLabelExists = countLabel.waitForExistence(timeout: 5)
         XCTAssertTrue(countLabelExists)
+        let countLabelValue = countLabel.label
+        XCTAssertEqual(countLabelValue, "2 file(s) selected")
     }
 
     func testStubbedResultShowsResultUI() {
@@ -63,11 +68,14 @@ final class Speech2TextUITests: XCTestCase {
         // the stub seam sets status = .completed without running WhisperKit.
         let editorExists = app.textViews["resultTextEditor"].waitForExistence(timeout: 10)
         XCTAssertTrue(editorExists)
-        let copyExists = app.buttons["copyButton"].exists
+        // Wait on each sibling rather than a bare `.exists`: they render in the same
+        // body update as the editor, but the a11y tree may not have settled yet on a
+        // loaded CI runner. waitForExistence returns immediately if already present.
+        let copyExists = app.buttons["copyButton"].waitForExistence(timeout: 5)
         XCTAssertTrue(copyExists)
-        let exportExists = app.buttons["exportButton"].exists
+        let exportExists = app.buttons["exportButton"].waitForExistence(timeout: 5)
         XCTAssertTrue(exportExists)
-        let statusExists = app.staticTexts["statusText"].exists
+        let statusExists = app.staticTexts["statusText"].waitForExistence(timeout: 5)
         XCTAssertTrue(statusExists)
         // Intentionally do NOT tap transcribeButton — it would load a model.
     }

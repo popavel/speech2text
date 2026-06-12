@@ -73,6 +73,11 @@ targets:
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: Speech2Text
+        # XcodeGen's test-target preset injects BUNDLE_LOADER = "$(TEST_HOST)", which
+        # belongs to unit-test bundles, not a ui-testing runner (a separate process).
+        # TEST_HOST is undefined here so it already expands to empty, but suppress it
+        # explicitly so the generated project never implies in-process loading.
+        BUNDLE_LOADER: ""
     dependencies:
       - target: Speech2Text
 

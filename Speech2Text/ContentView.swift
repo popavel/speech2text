@@ -114,6 +114,7 @@ struct ContentView: View {
                 Text("\(manager.droppedFileURLs.count) file(s) selected")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("fileCountLabel")
                 Spacer()
                 Button("Clear All") {
                     manager.clearFiles()
