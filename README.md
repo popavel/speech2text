@@ -71,7 +71,7 @@ xcodebuild \
 
 ## Troubleshooting
 
-### VSCode/SourceKit: `Loading the standard library failed` or `No such module 'Testing'`
+### VSCode/SourceKit: `Loading the standard library failed`, `No such module 'Testing'`, or `No such module 'XCTest'`
 
 If you edit in VSCode with the [Swift extension](https://marketplace.visualstudio.com/items?itemName=swiftlang.swift-vscode) and SourceKit reports errors such as `Loading the standard library failed` on an `import` line (typically in files importing **WhisperKit**), or `No such module 'Testing'` in the test targets — even though `xcodebuild` builds and tests fine — the language server is missing per-file compiler arguments.
 
@@ -92,6 +92,21 @@ xcodebuild -project Speech2Text.xcodeproj -scheme Speech2Text \
 ```
 
 Then in VSCode: `Cmd+Shift+P` → **Swift: Restart LSP Server**. Re-run the command whenever you add source files or change imports/dependencies. The generated `buildServer.json` and `.compile` are machine-specific and git-ignored.
+
+#### `No such module 'XCTest'` in `Speech2TextUITests`
+
+The XCUITest target lives in its **own** scheme (`Speech2TextUITests`), kept out of the `Speech2Text` scheme's test action. So the `build-for-testing` command above — which builds the `Speech2Text` scheme — never compiles the UI-test files, and `.compile` ends up with **zero** arguments for them. SourceKit then can't resolve `XCTest` (its framework search path comes from those missing arguments), and reports `No such module 'XCTest'` on the `import XCTest` line.
+
+**Fix** — build the UI-test scheme and **append** (`-a`) its arguments to the existing `.compile`, so the app and unit-test entries are preserved rather than overwritten:
+
+```bash
+# No CODE_SIGNING_ALLOWED=NO here — only running UI tests needs signing; building does not.
+xcodebuild -project Speech2Text.xcodeproj -scheme Speech2TextUITests \
+  -configuration Debug -destination 'platform=macOS' build-for-testing \
+  > /tmp/s2t-uitest.log 2>&1 && xcode-build-server parse -a -o .compile /tmp/s2t-uitest.log
+```
+
+Then restart the LSP server as above. To confirm the module made it in: `python3 -c "import json; print(sorted({e['module_name'] for e in json.load(open('.compile'))}))"` should list `Speech2TextUITests` alongside `Speech2Text`, `Speech2TextTests`, and `Speech2TextIntegrationTests`.
 
 ## Usage
 
