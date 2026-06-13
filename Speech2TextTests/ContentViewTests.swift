@@ -25,7 +25,7 @@ struct ContentViewTests {
         let view = ContentView(manager: manager)
 
         let button = try view.inspect().find(viewWithAccessibilityIdentifier: "transcribeButton")
-        #expect(button.isDisabled() == true)
+        #expect(button.isDisabled())
     }
 
     @Test("Transcribe is enabled once a supported file is added")
@@ -35,7 +35,7 @@ struct ContentViewTests {
         let view = ContentView(manager: manager)
 
         let button = try view.inspect().find(viewWithAccessibilityIdentifier: "transcribeButton")
-        #expect(button.isDisabled() == false)
+        #expect(!button.isDisabled())
     }
 
     @Test("The file list renders one entry per added file")
@@ -56,8 +56,9 @@ struct ContentViewTests {
     @Test("A skipped unsupported file surfaces the warning row")
     func skippedFilesWarningAppears() throws {
         let manager = TranscriptionManager()
-        // One supported file keeps the list non-empty; the unsupported one is
-        // reported via skippedFileNames and rendered in the warning row.
+        // Both files are added together; only the unsupported one lands in
+        // skippedFileNames and triggers the warning row. The warning gates on
+        // skippedFileNames alone — it does not depend on a non-empty fileList.
         manager.addFiles([
             URL(fileURLWithPath: "/tmp/a.mp3"),
             URL(fileURLWithPath: "/tmp/notes.pdf"),
