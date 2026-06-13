@@ -10,6 +10,11 @@ import ViewInspector
 // Transcribe (which would load WhisperKit). All inspection is static: we read
 // the rendered body of a freshly built view, so no ViewHosting / XCTest
 // machinery is needed and the suite stays pure Swift Testing.
+//
+// Assertion-style convention: use bare `try` when the found view's value is then
+// asserted (the result is bound and used); use `#expect(throws: Never.self) { ... }`
+// for existence-only checks, where the result is discarded — it documents the
+// "this lookup must succeed" intent and avoids an unused-result warning.
 @MainActor
 @Suite("ContentView")
 struct ContentViewTests {

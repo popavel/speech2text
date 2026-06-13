@@ -21,11 +21,27 @@ final class Speech2TextUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Wait for `element` to register in the accessibility tree, then assert it did.
+    /// `waitForExistence` returns immediately if the element is already present, so
+    /// this is also safe for siblings that render in the same body update.
+    private func assertExists(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 5,
+        _ message: String = ""
+    ) {
+        XCTAssertTrue(
+            element.waitForExistence(timeout: timeout),
+            message.isEmpty ? "\(element) did not appear within \(timeout)s" : message
+        )
+    }
+
     private func launchApp(
         preloadFiles: [String] = [],
         stubResult: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
+        // Sentinel consumed by TranscriptionManager.applyUITestSeamIfPresent(); the
+        // string must match the guard there (Speech2Text/TranscriptionManager.swift).
         app.launchArguments = ["-uiTesting"]
         if !preloadFiles.isEmpty {
             app.launchEnvironment["UITEST_PRELOAD_FILES"] = preloadFiles.joined(separator: "\n")
@@ -40,8 +56,7 @@ final class Speech2TextUITests: XCTestCase {
     func testTranscribeDisabledOnLaunchWithNoFiles() {
         let app = launchApp()
         let transcribe = app.buttons["transcribeButton"]
-        let exists = transcribe.waitForExistence(timeout: 10)
-        XCTAssertTrue(exists)
+        assertExists(transcribe, timeout: 10)
         let isEnabled = transcribe.isEnabled
         XCTAssertFalse(isEnabled)
     }
@@ -49,16 +64,22 @@ final class Speech2TextUITests: XCTestCase {
     func testPreloadedFilesEnableTranscribe() {
         let app = launchApp(preloadFiles: ["/tmp/a.mp3", "/tmp/b.wav"])
         let transcribe = app.buttons["transcribeButton"]
-        let exists = transcribe.waitForExistence(timeout: 10)
-        XCTAssertTrue(exists)
+        assertExists(transcribe, timeout: 10)
         let isEnabled = transcribe.isEnabled
         XCTAssertTrue(isEnabled)
-        // Locate the label by its stable accessibility id (not the display string),
-        // then assert the rendered value so the count itself is still verified.
+        // Verify the count two ways. First, exactly two files are queued —
+        // asserted via the per-chip remove buttons, which is independent of the
+        // count label's display string (so a wording/format change can't mask a
+        // wrong count).
+        assertExists(app.buttons["removeFileButton-0"])
+        assertExists(app.buttons["removeFileButton-1"])
+        XCTAssertFalse(app.buttons["removeFileButton-2"].exists)
+        // Second, the count label renders the total. On macOS a SwiftUI `Text`
+        // surfaces its string under the accessibility `value`, not `label` (which
+        // is empty), so read `.value`.
         let countLabel = app.staticTexts["fileCountLabel"]
-        let countLabelExists = countLabel.waitForExistence(timeout: 5)
-        XCTAssertTrue(countLabelExists)
-        let countLabelValue = countLabel.label
+        assertExists(countLabel)
+        let countLabelValue = countLabel.value as? String
         XCTAssertEqual(countLabelValue, "2 file(s) selected")
     }
 
@@ -66,17 +87,19 @@ final class Speech2TextUITests: XCTestCase {
         let app = launchApp(preloadFiles: ["/tmp/a.mp3"], stubResult: "hello world")
         // The result editor and its actions appear only once there's a result —
         // the stub seam sets status = .completed without running WhisperKit.
-        let editorExists = app.textViews["resultTextEditor"].waitForExistence(timeout: 10)
-        XCTAssertTrue(editorExists)
+        let editor = app.textViews["resultTextEditor"]
+        assertExists(editor, timeout: 10)
+        // Assert the rendered transcription, not just the editor's presence: a wrong
+        // stub value (encoding change, key rename, a double seam call) would still
+        // render the result section and pass every existence check otherwise.
+        let editorValue = editor.value as? String
+        XCTAssertEqual(editorValue, "hello world")
         // Wait on each sibling rather than a bare `.exists`: they render in the same
         // body update as the editor, but the a11y tree may not have settled yet on a
         // loaded CI runner. waitForExistence returns immediately if already present.
-        let copyExists = app.buttons["copyButton"].waitForExistence(timeout: 5)
-        XCTAssertTrue(copyExists)
-        let exportExists = app.buttons["exportButton"].waitForExistence(timeout: 5)
-        XCTAssertTrue(exportExists)
-        let statusExists = app.staticTexts["statusText"].waitForExistence(timeout: 5)
-        XCTAssertTrue(statusExists)
+        assertExists(app.buttons["copyButton"])
+        assertExists(app.buttons["exportButton"])
+        assertExists(app.staticTexts["statusText"])
         // Intentionally do NOT tap transcribeButton — it would load a model.
     }
 }
