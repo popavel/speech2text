@@ -39,8 +39,12 @@ jobs:
       - name: Run UI tests
         run: |
           set -o pipefail
+          # -configuration Debug is explicit (not just the test-action default): the
+          # UI-test seam is #if DEBUG, so a future switch to Release would silently
+          # compile it out and the tests would launch an unseeded app.
           xcodebuild \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
+            -configuration Debug \
             -destination 'platform=macOS' \
             test | xcbeautify

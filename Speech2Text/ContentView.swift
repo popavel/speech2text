@@ -14,11 +14,15 @@ struct ContentView: View {
         _manager = State(initialValue: manager)
     }
 
+    #if DEBUG
     /// Test seam: inject a pre-configured manager so view tests can set up state
-    /// (files, status, results) before inspecting the rendered hierarchy.
+    /// (files, status, results) before inspecting the rendered hierarchy. Compiled
+    /// out of Release — the app uses the zero-arg `init()`; only the in-process
+    /// ViewInspector suite (Debug) constructs a view with a pre-built manager.
     init(manager: TranscriptionManager) {
         _manager = State(initialValue: manager)
     }
+    #endif
 
     var body: some View {
         VStack(spacing: 20) {

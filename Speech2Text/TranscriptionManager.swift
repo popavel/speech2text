@@ -336,6 +336,12 @@ extension TranscriptionManager {
         // is reachable without running WhisperKit. Guard against an empty value
         // (mirroring the preload guard above) so a blank stub doesn't flip the
         // status to .completed with nothing to show.
+        //
+        // This jumps straight to the terminal `.completed` state, deliberately
+        // skipping the side effects the real `startTranscription()` path runs en
+        // route (clearing `skippedFileNames`, setting `whisperKit`, etc.). That's
+        // fine for the seam's purpose (reach the result UI); if a future change adds
+        // a `.completed` invariant, audit this shortcut alongside it.
         if let stub = environment["UITEST_STUB_RESULT"], !stub.isEmpty {
             transcriptionResult = stub
             status = .completed
