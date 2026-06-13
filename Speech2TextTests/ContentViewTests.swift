@@ -69,6 +69,19 @@ struct ContentViewTests {
         #expect(try warning.text().string() == "Unsupported file skipped: notes.pdf")
     }
 
+    @Test("Warning row appears when no valid files are queued")
+    func warningAppearsWithOnlySkippedFile() throws {
+        // Only an unsupported file is dropped, so droppedFileURLs stays empty. The
+        // warning still renders, proving it gates on skippedFileNames alone and not
+        // on a non-empty fileList (ContentView.swift:43 vs :31).
+        let manager = TranscriptionManager()
+        manager.addFiles([URL(fileURLWithPath: "/tmp/notes.pdf")])
+        let view = ContentView(manager: manager)
+
+        let warning = try view.inspect().find(viewWithAccessibilityIdentifier: "skippedWarning")
+        #expect(try warning.text().string() == "Unsupported file skipped: notes.pdf")
+    }
+
     @Test("Status text reflects the manager's status message")
     func statusTextReflectsManager() throws {
         let manager = TranscriptionManager()
