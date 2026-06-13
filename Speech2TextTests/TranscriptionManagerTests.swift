@@ -333,6 +333,17 @@ struct TranscriptionManagerTests {
         #expect(manager.status == .completed)
         #expect(manager.transcriptionResult == "hello world")
     }
+
+    @Test("Launch seam preloads files from the environment variable")
+    func preloadFilesSeatsThemInTheQueue() {
+        let manager = TranscriptionManager()
+        manager.applyUITestSeamIfPresent(
+            arguments: ["-uiTesting"],
+            environment: ["UITEST_PRELOAD_FILES": "/tmp/a.mp3\n/tmp/b.wav"]
+        )
+        #expect(manager.droppedFileURLs.count == 2)
+        #expect(manager.status == .idle)
+    }
     #endif
 }
 
