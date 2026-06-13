@@ -317,6 +317,9 @@ extension TranscriptionManager {
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
+        // Sentinel produced by Speech2TextUITests.launchApp() (`launchArguments =
+        // ["-uiTesting"]`). The two strings must stay in sync — there is no
+        // compile-time link across the target boundary.
         guard arguments.contains("-uiTesting") else { return }
 
         // Preload files without a file dialog. `addFiles` filters by extension
