@@ -99,7 +99,14 @@ final class Speech2TextUITests: XCTestCase {
         // loaded CI runner. waitForExistence returns immediately if already present.
         assertExists(app.buttons["copyButton"])
         assertExists(app.buttons["exportButton"])
-        assertExists(app.staticTexts["statusText"])
+        // Assert the status message too, not just its presence: for .completed the
+        // text is "Transcription complete", so a regression to that string would
+        // otherwise pass on existence alone. Read `.value` (Text surfaces its string
+        // there on macOS, not `.label`) — same as fileCountLabel above.
+        let statusText = app.staticTexts["statusText"]
+        assertExists(statusText)
+        let statusTextValue = statusText.value as? String
+        XCTAssertEqual(statusTextValue, "Transcription complete")
         // Intentionally do NOT tap transcribeButton — it would load a model.
     }
 }
