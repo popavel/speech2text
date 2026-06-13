@@ -75,8 +75,12 @@ struct ContentViewTests {
         manager.status = .completed
         let view = ContentView(manager: manager)
 
+        // Derive the expected text from the manager rather than duplicating the
+        // literal: this render test asserts the view shows exactly what the manager
+        // reports. The "Transcription complete" copy itself is pinned in the
+        // manager's own unit tests.
         let status = try view.inspect().find(viewWithAccessibilityIdentifier: "statusText")
-        #expect(try status.text().string() == "Transcription complete")
+        #expect(try status.text().string() == manager.statusMessage)
     }
 
     @Test("Each file chip exposes a uniquely indexed remove button")
