@@ -338,11 +338,14 @@ extension TranscriptionManager {
         // status to .completed with nothing to show.
         //
         // This jumps straight to the terminal `.completed` state, deliberately
-        // skipping the side effects the real `startTranscription()` path runs en
-        // route (clearing `skippedFileNames`, setting `whisperKit`, etc.). That's
-        // fine for the seam's purpose (reach the result UI); if a future change adds
-        // a `.completed` invariant, audit this shortcut alongside it.
+        // skipping most of the side effects the real `startTranscription()` path runs
+        // en route (setting `whisperKit`, progress ticks, etc.). It does mirror one
+        // `.completed` invariant: clearing `skippedFileNames`, so a mixed preload
+        // (supported + unsupported extensions) can't leave the result UI rendered
+        // alongside a stale warning row — a state unreachable in the real app. If a
+        // future change adds another `.completed` invariant, audit this shortcut too.
         if let stub = environment["UITEST_STUB_RESULT"], !stub.isEmpty {
+            skippedFileNames = []   // match startTranscription()'s .completed invariant (see :213)
             transcriptionResult = stub
             status = .completed
         }
