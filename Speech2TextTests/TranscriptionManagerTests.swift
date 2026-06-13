@@ -344,6 +344,23 @@ struct TranscriptionManagerTests {
         #expect(manager.droppedFileURLs.count == 2)
         #expect(manager.status == .idle)
     }
+
+    @Test("Stubbed completion clears skippedFileNames even with a mixed preload")
+    func stubResultClearsSkippedFileNames() {
+        let manager = TranscriptionManager()
+        manager.applyUITestSeamIfPresent(
+            arguments: ["-uiTesting"],
+            environment: [
+                "UITEST_PRELOAD_FILES": "/tmp/a.mp3\n/tmp/notes.pdf",
+                "UITEST_STUB_RESULT": "hello world",
+            ]
+        )
+        #expect(manager.status == .completed)
+        // The stub jumps straight to .completed; it must mirror startTranscription()'s
+        // invariant of clearing skippedFileNames, so a mixed preload can't leave the
+        // result UI rendered alongside a stale warning row.
+        #expect(manager.skippedFileNames.isEmpty)
+    }
     #endif
 }
 
