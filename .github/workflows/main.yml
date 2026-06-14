@@ -4,8 +4,12 @@ name: Main
 on:
   push:
     branches: [main]   # runs on pushes to the main branch
-  pull_request:
-    branches: [main]   # runs on pull requests targeting the main branch
+
+  # Disabled for now to save CI minutes. Re-enable by uncommenting these
+  # two lines (they sit at the `on:` level, so they restore cleanly).
+  # pull_request:
+  #   branches: [main]   # runs on pull requests targeting the main branch
+
   workflow_dispatch:   # lets you trigger it manually from the Actions tab
 
 # Cancel superseded runs on the same branch / PR.
