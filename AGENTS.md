@@ -113,13 +113,15 @@ pieces run on GitHub's runners.
   guard doesn't apply in CI.
 - All bot workflows authenticate the model via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret
   (subscription auth, not a pay-as-you-go API key — generate with `claude setup-token`).
-- **WhisperKit drift check** — [.github/workflows/whisperkit-drift.yml](.github/workflows/whisperkit-drift.yml)
-  runs weekly: re-resolves to the latest WhisperKit release within the pinned major, builds +
-  tests, and opens a PR if still green or files an issue (mentioning `@claude`) if upstream drift
-  broke the build. (A new major isn't picked up by `from:` — that needs a manual bump.) Because
-  both are raised with the Actions `GITHUB_TOKEN`, the PR carries no status checks of its own (the
-  build/test ran in the drift job) and the issue's `@claude` mention isn't auto-triggered — a
-  maintainer re-runs CI / re-invokes `@claude`.
+- **Dependency drift check** — [.github/workflows/dependency-drift.yml](.github/workflows/dependency-drift.yml)
+  runs weekly: drops `Package.resolved` and re-resolves the whole SwiftPM graph (WhisperKit,
+  ViewInspector, and transitives like swift-argument-parser) to the latest release each `from:`
+  allows, builds + tests, and opens a PR (listing which pins moved) if still green or files an
+  issue (mentioning `@claude`) if upstream drift broke the build. (A new *major* of any dependency
+  isn't picked up by `from:` — that needs a manual bump.) Because both are raised with the Actions
+  `GITHUB_TOKEN`, the PR carries no status checks of its own (the build/test ran in the drift job)
+  and the issue's `@claude` mention isn't auto-triggered — a maintainer re-runs CI / re-invokes
+  `@claude`.
 
 ## Architecture
 
