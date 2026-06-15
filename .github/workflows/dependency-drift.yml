@@ -140,7 +140,7 @@ jobs:
               | ($a | map(.identity)) as $akeys
               | (
                   ($b[]
-                   | select(([.identity] | inside($akeys)) | not)
+                   | select(.identity as $id | ($akeys | index($id)) | not)
                    | "- `\(.identity)`: \(.state.version // "—") → (removed)"),
                   ($a[]
                    | select((.state.version != null) and (($bm[.identity] // "—") != .state.version))
