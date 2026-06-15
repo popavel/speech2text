@@ -71,7 +71,10 @@ jobs:
         run: |
           set -o pipefail
           # Snapshot the current pins so the PR step can report what moved.
-          [ -f "$RESOLVED" ] && cp "$RESOLVED" "$PINS_BEFORE" || true
+          # `if`-form (not `[ -f ] && cp || true`) so a cp failure isn't masked by
+          # the test; keep `|| true` on cp so a transient /tmp write error stays
+          # non-fatal (the PR step falls back to opening a PR if the snapshot is gone).
+          if [ -f "$RESOLVED" ]; then cp "$RESOLVED" "$PINS_BEFORE" || true; fi
           # Drop the pinned Package.resolved first: a plain resolve honors the
           # existing pins and would never advance to newer releases, so the drift
           # check would never actually see drift. Removing it forces re-resolution
@@ -121,20 +124,38 @@ jobs:
             echo "Open drift PR #$existing already exists — skipping."
             exit 0
           fi
-          # Summarize which pins moved (identity: old → new) by diffing the snapshot
-          # against the freshly resolved file. Falls back gracefully if either side
-          # is missing (first run / no prior pins).
+          # Summarize which pins actually moved (identity: old → new) by diffing the
+          # snapshot against the freshly resolved file. Only real version movement —
+          # added, removed, or version-changed packages — counts; a metadata-only
+          # churn (e.g. a different `originHash` with identical versions) yields no
+          # lines. Revision/branch-pinned packages have a null `.state.version`; the
+          # `!= null` guard keeps them from rendering a spurious "— → null".
+          # `2>/dev/null || true` swallows a missing-snapshot jq error (→ empty).
           changes=$(jq -rn \
-            --slurpfile before "${PINS_BEFORE:-/dev/null}" \
+            --slurpfile before "$PINS_BEFORE" \
             --slurpfile after "$RESOLVED" '
               ($before[0].pins // []) as $b
               | ($after[0].pins // []) as $a
               | ($b | map({key: .identity, value: .state.version}) | from_entries) as $bm
-              | $a[]
-              | select(($bm[.identity] // "—") != .state.version)
-              | "- `\(.identity)`: \($bm[.identity] // "—") → \(.state.version)"
+              | ($a | map(.identity)) as $akeys
+              | (
+                  ($b[]
+                   | select(([.identity] | inside($akeys)) | not)
+                   | "- `\(.identity)`: \(.state.version // "—") → (removed)"),
+                  ($a[]
+                   | select((.state.version != null) and (($bm[.identity] // "—") != .state.version))
+                   | "- `\(.identity)`: \($bm[.identity] // "—") → \(.state.version)")
+                )
             ' 2>/dev/null || true)
-          [ -n "$changes" ] || changes="(see the \`Package.resolved\` diff in this PR)"
+          # Gate on a real change. If the snapshot is genuinely missing we can't tell,
+          # so fall back to opening the PR; otherwise an empty summary means only
+          # Package.resolved metadata churned — skip the no-op PR.
+          if [ ! -f "$PINS_BEFORE" ]; then
+            changes="(snapshot unavailable — see the \`Package.resolved\` diff in this PR)"
+          elif [ -z "$changes" ]; then
+            echo "Only Package.resolved metadata changed (e.g. originHash); no version drift — skipping PR."
+            exit 0
+          fi
           branch="chore/dependency-drift-${{ github.run_id }}"
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
