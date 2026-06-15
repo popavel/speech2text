@@ -30,8 +30,9 @@ prose on how the automation fits together, see the **Automation helpers** sectio
 - [`claude-fix.yml`](claude-fix.yml) — the human-in-the-loop `@claude fix` loop: applies open
   review findings, builds + tests (green gate — a broken fix is not pushed), pushes, and
   re-reviews, all in one macOS run.
-- [`whisperkit-drift.yml`](whisperkit-drift.yml) — weekly: re-resolves WhisperKit to the latest
-  release within the pinned major, builds + tests, and opens a PR if still green or files an
+- [`dependency-drift.yml`](dependency-drift.yml) — weekly: drops `Package.resolved` and
+  re-resolves the whole SwiftPM graph (WhisperKit, ViewInspector, transitives) to the latest
+  release each `from:` allows, builds + tests, and opens a PR if still green or files an
   issue if upstream drift broke the build.
 
 ## Known limitations
