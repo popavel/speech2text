@@ -15,12 +15,12 @@ powered by [WhisperKit](https://github.com/argmaxinc/WhisperKit) and OpenAI's Wh
 
 ## Features
 
-- 🎙️ **Drag & drop** audio or video files to transcribe
-- 🌍 **Multi-language** support with auto-detect (English, German, Russian, French, Spanish, Italian, Portuguese, Japanese, Chinese, Ukrainian)
-- 🧠 **Multiple Whisper models** — choose between Tiny, Base, Small, and Large V3 Turbo to balance speed vs. accuracy
-- 🎬 **Video support** — automatically extracts audio from `mp4`, `mov`, `avi`, `m4v`
-- 🔒 **100% offline** — audio never leaves your machine; models run on-device via Core ML
-- 📝 **Batch transcription** of multiple files at once
+- **Drag & drop** audio or video files to transcribe
+- **Multi-language** support with auto-detect (English, German, Russian, French, Spanish, Italian, Portuguese, Japanese, Chinese, Ukrainian)
+- **Multiple Whisper models** — choose between Tiny, Base, Small, and Large V3 Turbo to balance speed vs. accuracy
+- **Video support** — automatically extracts audio from `mp4`, `mov`, `avi`, `m4v`
+- **100% offline** — audio never leaves your machine; models run on-device via Core ML
+- **Batch transcription** of multiple files at once
 
 ## Supported Formats
 
@@ -148,9 +148,21 @@ the commit-guard hooks — and its caveats.
 
 ## License
 
-See repository for license details.
+Speech2Text is open source under the [MIT License](LICENSE) — you are free to
+use, modify, and redistribute the source.
+
+The official, ready-to-use build will be sold on the Mac App Store. Releasing
+the source under MIT does not conflict with that: an open source license grants
+rights to *others*, while the copyright holder retains full rights to the work,
+including the right to sell binaries.
+
+Third-party components and their licenses are listed in
+[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
 
 ## Acknowledgements
 
-- [WhisperKit](https://github.com/argmaxinc/WhisperKit) by Argmax
+- [WhisperKit](https://github.com/argmaxinc/WhisperKit) by Argmax (MIT)
 - [OpenAI Whisper](https://github.com/openai/whisper)
+
+See [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for the full list of
+third-party dependencies and their licenses.
