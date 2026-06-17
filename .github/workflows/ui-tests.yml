@@ -1,12 +1,11 @@
 name: UI Tests (XCUITest)
 
-# Manual-only. XCUITest launches the app and attaches as a separate process,
-# which requires the runner to be able to (ad-hoc) sign the app + test runner —
-# so unlike every other job here it must NOT pass CODE_SIGNING_ALLOWED=NO (that
-# leaves the runner unsigned and it gets killed before bootstrapping). Headless
-# runners may also hit TCC/Accessibility prompts. Until a green run proves this
-# works on macos-26, it stays workflow_dispatch-only and never gates a PR.
+# Runs the XCUITest UI suite: launches the real app and drives it via
+# accessibility identifiers. Must run SIGNED (no CODE_SIGNING_ALLOWED=NO) — an
+# unsigned runner is killed before it can attach. Called by the feature/main/
+# release pipelines via workflow_call; also dispatchable manually.
 on:
+  workflow_call:
   workflow_dispatch:
 
 permissions:

@@ -30,3 +30,10 @@ jobs:
     name: Integration (WhisperKit)
     needs: build-and-test
     uses: ./.github/workflows/integration-whisperkit.yml
+
+  # Shared XCUITest UI job (see ui-tests.yml). Signed run; gated on build-and-test
+  # so a signed runner only spins up once the cheap build+test is green.
+  ui-tests:
+    name: UI Tests (XCUITest)
+    needs: build-and-test
+    uses: ./.github/workflows/ui-tests.yml
