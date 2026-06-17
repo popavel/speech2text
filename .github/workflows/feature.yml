@@ -1,26 +1,25 @@
 name: Feature
 
 # When should this workflow run?
+#
+# Push-only — deliberately NO `pull_request:` trigger. A push-event check attaches to
+# the branch head SHA, which is also the head commit of any feature/chore -> main PR,
+# so the push run's checks already satisfy the `main protection` ruleset's required
+# contexts on that PR (verified: the gate worked this way before a pull_request trigger
+# was briefly added). Re-adding `pull_request:` fires a SECOND run for the same commit;
+# the concurrency group below then cancels one of the pair, leaving a `cancelled`
+# required check on the PR head that blocks the merge. main.yml and release.yml are
+# push-only for the same reason.
 on:
   push:
     branches:
       - 'feature/**'   # runs on pushes to any feature/<feature-name> branch
       - 'chore/**'     # runs on pushes to any chore/<chore-name> branch
-  pull_request:        # runs on PRs targeting any feature/<feature-name> branch
-    branches:
-      - 'feature/**'   # runs on PRs targeting any feature/<feature-name> branch
-      - 'chore/**'     # runs on PRs targeting any chore/<chore-name> branch
-      - 'main'         # runs on PRs targeting main (for feature / chore -> main merges)
   workflow_dispatch:   # lets you trigger it manually from the Actions tab
 
-# Cancel superseded runs on the same branch / PR.
-# Key on the head branch (PR head ref, else the pushed branch) rather than
-# github.ref so that the `push` event and the `pull_request` event triggered by
-# the SAME commit on a feature/chore branch with an open PR into main land in
-# one group — cancel-in-progress then collapses that duplicate to a single run
-# instead of building (and spinning up the signed UI runner) twice.
+# Cancel a superseded in-flight run when a newer commit is pushed to the same branch.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
