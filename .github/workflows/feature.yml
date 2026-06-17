@@ -5,14 +5,22 @@ on:
   push:
     branches:
       - 'feature/**'   # runs on pushes to any feature/<feature-name> branch
+      - 'chore/**'     # runs on pushes to any chore/<chore-name> branch
   pull_request:        # runs on PRs targeting any feature/<feature-name> branch
     branches:
-      - 'feature/**'
+      - 'feature/**'   # runs on PRs targeting any feature/<feature-name> branch
+      - 'chore/**'     # runs on PRs targeting any chore/<chore-name> branch
+      - 'main'         # runs on PRs targeting main (for feature / chore -> main merges)
   workflow_dispatch:   # lets you trigger it manually from the Actions tab
 
 # Cancel superseded runs on the same branch / PR.
+# Key on the head branch (PR head ref, else the pushed branch) rather than
+# github.ref so that the `push` event and the `pull_request` event triggered by
+# the SAME commit on a feature/chore branch with an open PR into main land in
+# one group — cancel-in-progress then collapses that duplicate to a single run
+# instead of building (and spinning up the signed UI runner) twice.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
