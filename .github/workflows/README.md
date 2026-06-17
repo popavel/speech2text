@@ -15,10 +15,21 @@ prose on how the automation fits together, see the **Automation helpers** sectio
 - [`main.yml`](main.yml) — calls `build-and-test` on pushes / PRs to `main`.
 - [`release.yml`](release.yml) — calls `build-and-test` on `release/**` branches.
 
+Each of the three pipelines also calls `integration-whisperkit` and `ui-tests` (both
+`needs: build-and-test`) — see below.
+
 ### Integration
 
 - [`integration-whisperkit.yml`](integration-whisperkit.yml) — runs the end-to-end WhisperKit
   suite (downloads the tiny model and actually transcribes), not just a compile.
+
+### UI tests
+
+- [`ui-tests.yml`](ui-tests.yml) — reusable (`workflow_call`) job: runs the XCUITest UI suite,
+  which launches the real app and drives it via accessibility identifiers. Unlike every other job
+  it runs **signed** (no `CODE_SIGNING_ALLOWED=NO` — an unsigned runner is killed before it can
+  attach). Called by feature/main/release with `needs: build-and-test`, and still dispatchable
+  manually from the Actions tab.
 
 ### Claude automation
 
