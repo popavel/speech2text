@@ -11,6 +11,7 @@ enum MediaFixtureError: Error {
     case readerFailed
     case pixelBufferFailed
     case toneGenerationFailed
+    case unsupportedToneFormat
 }
 
 // MARK: - MediaFixtures
@@ -31,8 +32,18 @@ enum MediaFixtures {
 
     // MARK: Tone audio
 
+    /// Extensions `makeToneAudio` can synthesize in-process via `AVAudioFile`.
+    /// mp3/ogg/wma are intentionally excluded — Apple's audio stack has no
+    /// encoder for them (verified: `afconvert` to mp3 fails with `fmt?`, and
+    /// there is no `.ogg`/`.wma` container writer at all), so a caller needing
+    /// those must supply a checked-in fixture instead.
+    static let encodableToneExtensions: Set<String> = ["wav", "aiff", "caf", "m4a", "flac"]
+
     static func makeToneAudio(duration: TimeInterval = 1.5, ext: String = "wav") throws -> URL {
         let url = tempURL(ext: ext)
+        guard encodableToneExtensions.contains(ext.lowercased()) else {
+            throw MediaFixtureError.unsupportedToneFormat
+        }
         let sampleRate = 16000.0
         // Throw rather than trap on a degenerate duration (a force-unwrap on a
         // nil buffer would abort the whole test process). Validate the frame
@@ -96,7 +107,7 @@ enum MediaFixtures {
 
     static func makeVideoWithAudio(audioURL: URL, ext: String = "mp4") async throws -> URL {
         let url = tempURL(ext: ext)
-        let fileType: AVFileType = (ext.lowercased() == "mov") ? .mov : .mp4
+        let fileType = videoFileType(for: ext)
         let composer = VideoComposer(outputURL: url, fileType: fileType)
         try await composer.compose(audioURL: audioURL)
         return url
@@ -107,7 +118,7 @@ enum MediaFixtures {
         ext: String = "mp4"
     ) async throws -> URL {
         let url = tempURL(ext: ext)
-        let fileType: AVFileType = (ext.lowercased() == "mov") ? .mov : .mp4
+        let fileType = videoFileType(for: ext)
         let composer = VideoComposer(outputURL: url, fileType: fileType)
         try await composer.composeSilent(duration: duration)
         return url
@@ -126,12 +137,27 @@ enum MediaFixtures {
                 AVLinearPCMIsBigEndianKey: false,
                 AVLinearPCMIsFloatKey: false,
             ]
-        default:
+        case "flac":
+            return [
+                AVFormatIDKey: kAudioFormatFLAC,
+                AVSampleRateKey: sampleRate,
+                AVNumberOfChannelsKey: 1,
+                AVLinearPCMBitDepthKey: 16,
+            ]
+        default: // m4a (AAC); makeToneAudio's guard rejects anything else.
             return [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: sampleRate,
                 AVNumberOfChannelsKey: 1,
             ]
+        }
+    }
+
+    private static func videoFileType(for ext: String) -> AVFileType {
+        switch ext.lowercased() {
+        case "mov": return .mov
+        case "m4v": return .m4v
+        default: return .mp4
         }
     }
 }
