@@ -56,6 +56,31 @@ struct AudioExtractionIntegrationTests {
         try await assertAudioFileIsUsable(extracted, sourceDuration: 1.0)
     }
 
+    /// Video mirror of `everyAdvertisedAudioFormatDecodes`: every extension
+    /// advertised in `supportedVideoExtensions` must extract a usable audio
+    /// track. `avi` failed this (AVURLAsset can't open it) before it was removed.
+    @Test("Every advertised video format extracts a usable audio track")
+    func everyAdvertisedVideoFormatExtracts() async throws {
+        // Containers MediaFixtures can produce via AVAssetWriter.
+        let producible: Set<String> = ["mp4", "mov", "m4v"]
+        let manager = TranscriptionManager()
+        for ext in TranscriptionManager.supportedVideoExtensions.sorted() {
+            guard producible.contains(ext) else {
+                Issue.record(
+                    "Advertised video format .\(ext) has no producible fixture — its extraction path is unverified"
+                )
+                continue
+            }
+            let audio = try MediaFixtures.makeToneAudio(duration: 0.5)
+            defer { MediaFixtures.cleanup([audio]) }
+            let video = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: ext)
+            defer { MediaFixtures.cleanup([video]) }
+            let extracted = try await manager.extractAudio(from: video)
+            defer { MediaFixtures.cleanup([extracted]) }
+            try await assertAudioFileIsUsable(extracted, sourceDuration: 0.5)
+        }
+    }
+
     @Test("Throws noAudioTrack when the video has no audio")
     func noAudioTrackThrows() async throws {
         let manager = TranscriptionManager()

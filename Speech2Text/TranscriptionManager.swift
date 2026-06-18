@@ -144,11 +144,11 @@ class TranscriptionManager {
     // MARK: File Management
 
     nonisolated static let supportedAudioExtensions: Set<String> = [
-        "mp3", "wav", "m4a", "flac", "aac", "ogg", "wma", "aiff", "caf",
+        "mp3", "wav", "m4a", "flac", "aac", "ogg", "aiff", "caf",
     ]
 
     nonisolated static let supportedVideoExtensions: Set<String> = [
-        "mp4", "mov", "avi", "m4v",
+        "mp4", "mov", "m4v",
     ]
 
     /// Whether a URL's extension names an audio or video container the app can

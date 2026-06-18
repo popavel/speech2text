@@ -19,12 +19,37 @@ import Testing
 // mp3/aac/ogg are covered via tiny checked-in fixtures (Fixtures/tone.{mp3,aac,
 // ogg}) rather than runtime synthesis: Apple has no mp3 or Ogg encoder, and raw
 // ADTS .aac isn't reliably writable via AVAudioFile — yet AVAudioFile *decodes*
-// all three (verified on macOS 26). The genuinely unsupported formats are wma
-// and avi (AVAudioFile/AVURLAsset reject them outright); they're deliberately not
-// covered here and are tracked for a separate supported-list trim.
+// all three (verified on macOS 26). wma and avi were *removed* from the supported
+// lists because the app's stack can't decode them (AVAudioFile/AVURLAsset reject
+// them outright); `everyAdvertisedAudioFormatDecodes` below now asserts every
+// still-advertised format really is decodable, so a regression can't slip back in.
 
 @Suite("Audio format decodability (integration)")
 struct AudioFormatDecodabilityTests {
+
+    /// The invariant: every extension the app advertises in
+    /// `supportedAudioExtensions` must actually decode through the production
+    /// path. Synthesizable formats are generated on the fly; the rest load from
+    /// checked-in fixtures. An advertised format with no decodable sample fails
+    /// here — which is exactly what flagged wma before it was removed.
+    @Test("Every advertised audio format decodes through the production path")
+    func everyAdvertisedAudioFormatDecodes() throws {
+        for ext in TranscriptionManager.supportedAudioExtensions.sorted() {
+            if MediaFixtures.encodableToneExtensions.contains(ext) {
+                let url = try MediaFixtures.makeToneAudio(duration: 0.3, ext: ext)
+                defer { MediaFixtures.cleanup([url]) }
+                try Self.assertDecodable(url)
+            } else if let fixture = Bundle(for: BundleToken.self).url(
+                forResource: "tone", withExtension: ext
+            ) {
+                try Self.assertDecodable(fixture)
+            } else {
+                Issue.record(
+                    "Advertised audio format .\(ext) has no decodable sample (not synthesizable, no Fixtures/tone.\(ext)) — it cannot be transcribed"
+                )
+            }
+        }
+    }
 
     @Test(
         "Synthesizable audio formats decode through the production AVAudioFile path",
@@ -50,7 +75,7 @@ struct AudioFormatDecodabilityTests {
 
     @Test(
         "makeToneAudio refuses formats it cannot synthesize",
-        arguments: ["mp3", "aac", "ogg", "wma"]
+        arguments: ["mp3", "aac", "ogg"]
     )
     func makeToneAudioRejectsNonEncodableFormats(ext: String) {
         #expect(throws: MediaFixtureError.unsupportedToneFormat) {

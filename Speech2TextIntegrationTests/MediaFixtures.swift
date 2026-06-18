@@ -33,10 +33,10 @@ enum MediaFixtures {
     // MARK: Tone audio
 
     /// Extensions `makeToneAudio` can synthesize in-process via `AVAudioFile`.
-    /// mp3/ogg/wma are intentionally excluded — Apple's audio stack has no
+    /// mp3 and ogg are intentionally excluded — Apple's audio stack has no
     /// encoder for them (verified: `afconvert` to mp3 fails with `fmt?`, and
-    /// there is no `.ogg`/`.wma` container writer at all), so a caller needing
-    /// those must supply a checked-in fixture instead.
+    /// there is no `.ogg` container writer at all), so a caller needing those
+    /// must supply a checked-in fixture instead (see Fixtures/).
     static let encodableToneExtensions: Set<String> = ["wav", "aiff", "caf", "m4a", "flac"]
 
     static func makeToneAudio(duration: TimeInterval = 1.5, ext: String = "wav") throws -> URL {
