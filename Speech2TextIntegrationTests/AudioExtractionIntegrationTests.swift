@@ -41,6 +41,21 @@ struct AudioExtractionIntegrationTests {
         try await assertAudioFileIsUsable(extracted, sourceDuration: 1.0)
     }
 
+    @Test("Extracts a usable audio track from a generated M4V")
+    func extractsAudioFromM4V() async throws {
+        let manager = TranscriptionManager()
+
+        let audio = try MediaFixtures.makeToneAudio(duration: 1.0)
+        defer { MediaFixtures.cleanup([audio]) }
+        let video = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: "m4v")
+        defer { MediaFixtures.cleanup([video]) }
+
+        let extracted = try await manager.extractAudio(from: video)
+        defer { MediaFixtures.cleanup([extracted]) }
+
+        try await assertAudioFileIsUsable(extracted, sourceDuration: 1.0)
+    }
+
     @Test("Throws noAudioTrack when the video has no audio")
     func noAudioTrackThrows() async throws {
         let manager = TranscriptionManager()

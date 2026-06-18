@@ -50,7 +50,15 @@ targets:
   Speech2TextIntegrationTests:
     type: bundle.unit-test
     platform: macOS
-    sources: [Speech2TextIntegrationTests]
+    sources:
+      # Fixtures/ holds tiny checked-in media samples for formats Apple's stack
+      # can decode but NOT synthesize (mp3/aac/ogg). Bundled as resources so the
+      # decodability tests can load them; everything else is generated at runtime.
+      - path: Speech2TextIntegrationTests
+        excludes:
+          - "Fixtures/**"
+      - path: Speech2TextIntegrationTests/Fixtures
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.integrationtests
