@@ -11,61 +11,18 @@ import Testing
 @Suite("Audio extraction (integration)")
 struct AudioExtractionIntegrationTests {
 
-    @Test("Extracts a usable audio track from a generated MP4")
-    func extractsAudioFromMP4() async throws {
-        let manager = TranscriptionManager()
-
-        let audio = try MediaFixtures.makeToneAudio(duration: 1.0)
-        defer { MediaFixtures.cleanup([audio]) }
-        let video = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: "mp4")
-        defer { MediaFixtures.cleanup([video]) }
-
-        let extracted = try await manager.extractAudio(from: video)
-        defer { MediaFixtures.cleanup([extracted]) }
-
-        try await assertAudioFileIsUsable(extracted, sourceDuration: 1.0)
-    }
-
-    @Test("Extracts a usable audio track from a generated MOV")
-    func extractsAudioFromMOV() async throws {
-        let manager = TranscriptionManager()
-
-        let audio = try MediaFixtures.makeToneAudio(duration: 1.0)
-        defer { MediaFixtures.cleanup([audio]) }
-        let video = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: "mov")
-        defer { MediaFixtures.cleanup([video]) }
-
-        let extracted = try await manager.extractAudio(from: video)
-        defer { MediaFixtures.cleanup([extracted]) }
-
-        try await assertAudioFileIsUsable(extracted, sourceDuration: 1.0)
-    }
-
-    @Test("Extracts a usable audio track from a generated M4V")
-    func extractsAudioFromM4V() async throws {
-        let manager = TranscriptionManager()
-
-        let audio = try MediaFixtures.makeToneAudio(duration: 1.0)
-        defer { MediaFixtures.cleanup([audio]) }
-        let video = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: "m4v")
-        defer { MediaFixtures.cleanup([video]) }
-
-        let extracted = try await manager.extractAudio(from: video)
-        defer { MediaFixtures.cleanup([extracted]) }
-
-        try await assertAudioFileIsUsable(extracted, sourceDuration: 1.0)
-    }
-
     /// Video mirror of `everyAdvertisedAudioFormatDecodes`: every extension
     /// advertised in `supportedVideoExtensions` must extract a usable audio
-    /// track. `avi` failed this (AVURLAsset can't open it) before it was removed.
+    /// track (covering mp4/mov/m4v in one loop). `avi` failed this (AVURLAsset
+    /// can't open it) before it was removed.
     @Test("Every advertised video format extracts a usable audio track")
     func everyAdvertisedVideoFormatExtracts() async throws {
-        // Containers MediaFixtures can produce via AVAssetWriter.
-        let producible: Set<String> = ["mp4", "mov", "m4v"]
         let manager = TranscriptionManager()
         for ext in TranscriptionManager.supportedVideoExtensions.sorted() {
-            guard producible.contains(ext) else {
+            // `videoFileType(for:)` is the single source of truth for which
+            // containers the fixtures can produce; nil means an advertised
+            // format we can't synthesize, so its extraction path is unverified.
+            guard MediaFixtures.videoFileType(for: ext) != nil else {
                 Issue.record(
                     "Advertised video format .\(ext) has no producible fixture — its extraction path is unverified"
                 )
@@ -78,6 +35,18 @@ struct AudioExtractionIntegrationTests {
             let extracted = try await manager.extractAudio(from: video)
             defer { MediaFixtures.cleanup([extracted]) }
             try await assertAudioFileIsUsable(extracted, sourceDuration: 0.5)
+        }
+    }
+
+    /// Locks finding-3's fix: `makeVideoWith*` must refuse a container the
+    /// fixtures can't synthesize rather than silently writing an MP4 into a
+    /// mislabeled file (which would make the format tests "pass" on wrong bytes).
+    @Test("makeVideoWithAudio refuses a container the fixtures can't produce")
+    func makeVideoWithAudioRejectsUnproducibleContainer() async throws {
+        let audio = try MediaFixtures.makeToneAudio(duration: 0.3, ext: "wav")
+        defer { MediaFixtures.cleanup([audio]) }
+        await #expect(throws: MediaFixtureError.unsupportedVideoFormat) {
+            _ = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: "avi")
         }
     }
 

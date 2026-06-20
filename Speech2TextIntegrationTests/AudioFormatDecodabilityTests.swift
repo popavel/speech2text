@@ -52,30 +52,11 @@ struct AudioFormatDecodabilityTests {
     }
 
     @Test(
-        "Synthesizable audio formats decode through the production AVAudioFile path",
-        arguments: ["wav", "aiff", "caf", "m4a", "flac"]
-    )
-    func synthesizableAudioFormatDecodes(ext: String) throws {
-        let url = try MediaFixtures.makeToneAudio(duration: 0.5, ext: ext)
-        defer { MediaFixtures.cleanup([url]) }
-        try Self.assertDecodable(url)
-    }
-
-    @Test(
-        "Checked-in fixtures (decodable but not synthesizable) decode through the production path",
-        arguments: ["mp3", "aac", "ogg"]
-    )
-    func bundledFixtureDecodes(ext: String) throws {
-        let url = try #require(
-            Bundle(for: BundleToken.self).url(forResource: "tone", withExtension: ext),
-            "Missing bundled fixture tone.\(ext) — check the Fixtures resources wiring in project.yml"
-        )
-        try Self.assertDecodable(url)
-    }
-
-    @Test(
         "makeToneAudio refuses formats it cannot synthesize",
-        arguments: ["mp3", "aac", "ogg"]
+        arguments: Array(
+            TranscriptionManager.supportedAudioExtensions
+                .subtracting(MediaFixtures.encodableToneExtensions)
+        )
     )
     func makeToneAudioRejectsNonEncodableFormats(ext: String) {
         #expect(throws: MediaFixtureError.unsupportedToneFormat) {
