@@ -12,6 +12,7 @@ enum MediaFixtureError: Error {
     case pixelBufferFailed
     case toneGenerationFailed
     case unsupportedToneFormat
+    case unsupportedVideoFormat
 }
 
 // MARK: - MediaFixtures
@@ -79,7 +80,7 @@ enum MediaFixtures {
 
         let file = try AVAudioFile(
             forWriting: url,
-            settings: audioSettings(for: ext, sampleRate: sampleRate)
+            settings: try audioSettings(for: ext, sampleRate: sampleRate)
         )
         try file.write(from: buffer)
         return url
@@ -107,7 +108,9 @@ enum MediaFixtures {
 
     static func makeVideoWithAudio(audioURL: URL, ext: String = "mp4") async throws -> URL {
         let url = tempURL(ext: ext)
-        let fileType = videoFileType(for: ext)
+        guard let fileType = videoFileType(for: ext) else {
+            throw MediaFixtureError.unsupportedVideoFormat
+        }
         let composer = VideoComposer(outputURL: url, fileType: fileType)
         try await composer.compose(audioURL: audioURL)
         return url
@@ -118,7 +121,9 @@ enum MediaFixtures {
         ext: String = "mp4"
     ) async throws -> URL {
         let url = tempURL(ext: ext)
-        let fileType = videoFileType(for: ext)
+        guard let fileType = videoFileType(for: ext) else {
+            throw MediaFixtureError.unsupportedVideoFormat
+        }
         let composer = VideoComposer(outputURL: url, fileType: fileType)
         try await composer.composeSilent(duration: duration)
         return url
@@ -126,7 +131,7 @@ enum MediaFixtures {
 
     // MARK: Internals
 
-    private static func audioSettings(for ext: String, sampleRate: Double) -> [String: Any] {
+    private static func audioSettings(for ext: String, sampleRate: Double) throws -> [String: Any] {
         switch ext.lowercased() {
         case "wav", "aiff", "caf":
             return [
@@ -144,20 +149,31 @@ enum MediaFixtures {
                 AVNumberOfChannelsKey: 1,
                 AVLinearPCMBitDepthKey: 16,
             ]
-        default: // m4a (AAC); makeToneAudio's guard rejects anything else.
+        case "m4a":
             return [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: sampleRate,
                 AVNumberOfChannelsKey: 1,
             ]
+        // No silent fallback: an ext listed in `encodableToneExtensions` but
+        // missing a case here would otherwise be encoded as AAC into a
+        // mislabeled file and "pass" decodability against the wrong codec.
+        default:
+            throw MediaFixtureError.unsupportedToneFormat
         }
     }
 
-    private static func videoFileType(for ext: String) -> AVFileType {
+    /// The container `AVAssetWriter` should write for `ext`, or nil if the
+    /// fixtures can't produce it. Single source of truth for "producible video
+    /// format": `everyAdvertisedVideoFormatExtracts` keys its coverage off this,
+    /// and `makeVideoWith*` refuse anything it doesn't map rather than silently
+    /// writing an MP4 into a mislabeled file.
+    static func videoFileType(for ext: String) -> AVFileType? {
         switch ext.lowercased() {
+        case "mp4": return .mp4
         case "mov": return .mov
         case "m4v": return .m4v
-        default: return .mp4
+        default: return nil
         }
     }
 }
