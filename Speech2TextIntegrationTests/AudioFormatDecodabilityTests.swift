@@ -33,19 +33,31 @@ struct AudioFormatDecodabilityTests {
     /// checked-in fixtures. An advertised format with no decodable sample fails
     /// here — which is exactly what flagged wma before it was removed.
     @Test("Every advertised audio format decodes through the production path")
-    func everyAdvertisedAudioFormatDecodes() throws {
+    func everyAdvertisedAudioFormatDecodes() {
+        // Each format is checked in its own do/catch so a throw (e.g. a codec
+        // that actually rejects the file — the regression this suite exists to
+        // catch) records an Issue for *that* format and the loop continues. A
+        // bare `try` in the loop would abort the whole sweep on the first
+        // failure and leave every later advertised format unverified that run.
         for ext in TranscriptionManager.supportedAudioExtensions.sorted() {
-            if MediaFixtures.encodableToneExtensions.contains(ext) {
-                let url = try MediaFixtures.makeToneAudio(duration: 0.3, ext: ext)
-                defer { MediaFixtures.cleanup([url]) }
-                try Self.assertDecodable(url)
-            } else if let fixture = Bundle(for: BundleToken.self).url(
-                forResource: "tone", withExtension: ext
-            ) {
-                try Self.assertDecodable(fixture)
-            } else {
+            do {
+                if MediaFixtures.encodableToneExtensions.contains(ext) {
+                    let url = try MediaFixtures.makeToneAudio(duration: 0.3, ext: ext)
+                    defer { MediaFixtures.cleanup([url]) }
+                    try Self.assertDecodable(url)
+                } else if let fixture = Bundle(for: BundleToken.self).url(
+                    forResource: "tone", withExtension: ext
+                ) {
+                    try Self.assertDecodable(fixture)
+                } else {
+                    Issue.record(
+                        "Advertised audio format .\(ext) has no decodable sample (not synthesizable, no Fixtures/tone.\(ext)) — it cannot be transcribed"
+                    )
+                }
+            } catch {
                 Issue.record(
-                    "Advertised audio format .\(ext) has no decodable sample (not synthesizable, no Fixtures/tone.\(ext)) — it cannot be transcribed"
+                    error,
+                    "Advertised audio format .\(ext) failed to decode through the production path"
                 )
             }
         }
