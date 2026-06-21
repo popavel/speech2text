@@ -16,7 +16,7 @@ struct AudioExtractionIntegrationTests {
     /// track (covering mp4/mov/m4v in one loop). `avi` failed this (AVURLAsset
     /// can't open it) before it was removed.
     @Test("Every advertised video format extracts a usable audio track")
-    func everyAdvertisedVideoFormatExtracts() async throws {
+    func everyAdvertisedVideoFormatExtracts() async {
         let manager = TranscriptionManager()
         for ext in TranscriptionManager.supportedVideoExtensions.sorted() {
             // `videoFileType(for:)` is the single source of truth for which
@@ -28,13 +28,23 @@ struct AudioExtractionIntegrationTests {
                 )
                 continue
             }
-            let audio = try MediaFixtures.makeToneAudio(duration: 0.5)
-            defer { MediaFixtures.cleanup([audio]) }
-            let video = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: ext)
-            defer { MediaFixtures.cleanup([video]) }
-            let extracted = try await manager.extractAudio(from: video)
-            defer { MediaFixtures.cleanup([extracted]) }
-            try await assertAudioFileIsUsable(extracted, sourceDuration: 0.5)
+            // Per-format do/catch so a throw records an Issue for this format and
+            // the loop moves on, rather than the first failure aborting the sweep
+            // and masking every later container's status.
+            do {
+                let audio = try MediaFixtures.makeToneAudio(duration: 0.5)
+                defer { MediaFixtures.cleanup([audio]) }
+                let video = try await MediaFixtures.makeVideoWithAudio(audioURL: audio, ext: ext)
+                defer { MediaFixtures.cleanup([video]) }
+                let extracted = try await manager.extractAudio(from: video)
+                defer { MediaFixtures.cleanup([extracted]) }
+                try await assertAudioFileIsUsable(extracted, sourceDuration: 0.5)
+            } catch {
+                Issue.record(
+                    error,
+                    "Advertised video format .\(ext) failed to extract a usable audio track"
+                )
+            }
         }
     }
 
