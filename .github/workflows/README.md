@@ -37,7 +37,9 @@ Each of the three pipelines also calls `integration-whisperkit` and `ui-tests` (
   word-boundary mention match (excluding `@claude fix`, which the fixer owns) before the macOS
   job runs. Triggers on issue/PR comments, reviews, and opened issues.
 - [`claude-code-review.yml`](claude-code-review.yml) — runs `/code-review --comment` on every PR
-  push and posts inline findings; a new push cancels the stale in-flight review.
+  push and posts inline findings; a new push cancels the stale in-flight review. **Skips
+  bot-authored PRs (e.g. the weekly drift PR) — `claude-code-action` refuses bot actors, and a
+  lockfile-only bump needs no static review.**
 - [`claude-fix.yml`](claude-fix.yml) — the human-in-the-loop `@claude fix` loop: applies open
   review findings, builds + tests (green gate — a broken fix is not pushed), pushes, and
   re-reviews, all in one macOS run.
@@ -53,3 +55,4 @@ These are accepted edges of the automation, recorded so maintainers aren't surpr
 | Caveat | Trigger → impact | Source |
 | ------ | ---------------- | ------ |
 | The `@claude` mention regex treats `-` as a word boundary, so handles like `@claude-bot` or `@claude-code` are matched as a mention of the bot. | A comment that mentions an unrelated `@claude-*` user (e.g. `@claude-bot please`) passes the gate, spinning up the privileged `macos-26` runner (with `contents: write`) even though no one summoned this bot — wasted compute, and an unintended privileged run on attacker-influenceable text. (`email@claude.com` correctly does **not** match, since `@` is preceded by an alphanumeric.) | [claude.yml:59](claude.yml#L59) |
+| A `dependency-drift.yml` PR is opened by `github-actions[bot]` via `GITHUB_TOKEN`, which GitHub won't let trigger `on: push` workflows. | The PR's required checks (`build-and-test`, Integration, UI Tests) sit at "Expected — Waiting for status to be reported" forever; a manual `workflow_dispatch` does not reliably attach to the PR head. **Unblock:** push one **human** commit to the PR branch — `git commit --allow-empty -m "ci: re-trigger checks" && git push` — which fires feature.yml's push trigger on the new head SHA and reports the checks. | [dependency-drift.yml:16](dependency-drift.yml#L16) |
