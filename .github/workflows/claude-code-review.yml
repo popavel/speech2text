@@ -31,6 +31,12 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # Skip machine-authored PRs (e.g. the weekly dependency-drift PR opened by
+    # github-actions[bot]): claude-code-action@v1 refuses bot actors, and a drift
+    # PR only bumps Package.resolved (already built + tested green in the drift job),
+    # so a static review adds ~nothing. Keeps the upstream bot guard intact and burns
+    # no subscription tokens on machine PRs.
+    if: github.event.pull_request.user.type != 'Bot'
     timeout-minutes: 30
     permissions:
       contents: read
