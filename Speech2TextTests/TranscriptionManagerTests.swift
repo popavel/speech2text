@@ -45,6 +45,38 @@ struct TranscriptionLanguageTests {
         #expect(TranscriptionLanguage.english != .auto)
         #expect(TranscriptionLanguage.english.displayName == "English")
     }
+
+    // MARK: - matching(_:) — the searchable picker's filter predicate
+
+    @Test("An empty query returns the full language list")
+    func matchingEmptyQueryReturnsAll() {
+        #expect(TranscriptionLanguage.matching("") == TranscriptionLanguage.allCases)
+    }
+
+    @Test("Matching is case-insensitive")
+    func matchingIsCaseInsensitive() {
+        #expect(TranscriptionLanguage.matching("english").contains(.english))
+        #expect(TranscriptionLanguage.matching("ENGLISH").contains(.english))
+    }
+
+    @Test("Matching is a substring match, not a prefix")
+    func matchingIsSubstring() {
+        // "ngli" sits in the middle of "English" — a prefix-only filter would miss it.
+        #expect(TranscriptionLanguage.matching("ngli").contains(.english))
+    }
+
+    @Test("A query that matches nothing returns an empty list")
+    func matchingNoneReturnsEmpty() {
+        #expect(TranscriptionLanguage.matching("zzzznotalanguage").isEmpty)
+    }
+
+    @Test("Every match is drawn from the full language set")
+    func matchingResultsAreFromAllCases() {
+        let all = Set(TranscriptionLanguage.allCases)
+        for language in TranscriptionLanguage.matching("a") {
+            #expect(all.contains(language))
+        }
+    }
 }
 
 // MARK: - WhisperModel

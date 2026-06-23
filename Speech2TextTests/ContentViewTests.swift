@@ -114,4 +114,30 @@ struct ContentViewTests {
             try view.inspect().find(viewWithAccessibilityIdentifier: "removeFileButton-1")
         }
     }
+
+    @Test("The language picker button renders the manager's selected language")
+    func languagePickerReflectsSelection() throws {
+        let manager = TranscriptionManager()
+        manager.selectedLanguage = .english
+        let view = ContentView(manager: manager)
+
+        // Read the button's own label text — not a global find — so the assertion is
+        // about the collapsed picker, never the popover list (which only materializes
+        // at runtime when presented; that flow is covered in Speech2TextUITests).
+        let label = try view.inspect()
+            .find(viewWithAccessibilityIdentifier: "languagePicker")
+            .button().labelView().hStack().text(0).string()
+        #expect(label == "English")
+    }
+
+    @Test("The language picker button defaults to Auto-detect")
+    func languagePickerDefaultsToAuto() throws {
+        let manager = TranscriptionManager()
+        let view = ContentView(manager: manager)
+
+        let label = try view.inspect()
+            .find(viewWithAccessibilityIdentifier: "languagePicker")
+            .button().labelView().hStack().text(0).string()
+        #expect(label == "Auto-detect")
+    }
 }
