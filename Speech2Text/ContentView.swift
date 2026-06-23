@@ -175,14 +175,8 @@ struct ContentView: View {
                 Text("Language")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Picker("", selection: $manager.selectedLanguage) {
-                    ForEach(TranscriptionLanguage.allCases) { lang in
-                        Text(lang.displayName).tag(lang)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 160)
-                .accessibilityIdentifier("languagePicker")
+                LanguagePicker(selection: $manager.selectedLanguage)
+                    .frame(width: 160)
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -391,6 +385,79 @@ struct ContentView: View {
             try? manager.transcriptionResult.write(
                 to: url, atomically: true, encoding: .utf8
             )
+        }
+    }
+}
+
+// MARK: - Language Picker
+
+/// A searchable language picker. The full WhisperKit language set (~100 entries)
+/// is too long for a plain menu, so this presents the current selection as a button
+/// that opens a popover with a search field and a filtered, scrollable list.
+private struct LanguagePicker: View {
+    @Binding var selection: TranscriptionLanguage
+    @State private var isPresented = false
+    @State private var searchText = ""
+
+    private var filtered: [TranscriptionLanguage] {
+        guard !searchText.isEmpty else { return TranscriptionLanguage.allCases }
+        return TranscriptionLanguage.allCases.filter {
+            $0.displayName.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    var body: some View {
+        Button {
+            isPresented = true
+        } label: {
+            HStack {
+                Text(selection.displayName)
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("languagePicker")
+        .onChange(of: isPresented) { _, presented in
+            // Clear the filter whenever the popover closes (selection or outside-click),
+            // so reopening always starts from the full list.
+            if !presented { searchText = "" }
+        }
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            VStack(spacing: 0) {
+                TextField("Search", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(8)
+                    .accessibilityIdentifier("languageSearchField")
+                Divider()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(filtered) { language in
+                            Button {
+                                selection = language
+                                isPresented = false
+                            } label: {
+                                HStack {
+                                    Text(language.displayName)
+                                    Spacer()
+                                    if language == selection {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.tint)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .frame(width: 240, height: 320)
         }
     }
 }
