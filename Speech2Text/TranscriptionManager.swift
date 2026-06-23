@@ -4,36 +4,33 @@ import AVFoundation
 
 // MARK: - Language
 
-enum TranscriptionLanguage: String, CaseIterable, Identifiable {
-    case auto = ""
-    case english = "en"
-    case german = "de"
-    case russian = "ru"
-    case french = "fr"
-    case spanish = "es"
-    case italian = "it"
-    case portuguese = "pt"
-    case japanese = "ja"
-    case chinese = "zh"
-    case ukrainian = "uk"
+/// A selectable transcription language, projected directly from WhisperKit's
+/// `Constants.languages`. Every WhisperKit name becomes an entry, so the list is a
+/// zero-maintenance mirror of the engine's supported set (it never drifts). WhisperKit
+/// lists a handful of alias names (e.g. "mandarin"/"chinese") that share a `code`;
+/// those simply appear as separate rows mapping to the same code.
+struct TranscriptionLanguage: Identifiable, Hashable, Sendable {
+    let code: String        // "" = auto-detect, else a WhisperKit language code (may repeat across aliases)
+    let displayName: String // unique per entry (the WhisperKit name, capitalized)
 
-    var id: String { rawValue + displayName }
+    var id: String { code + displayName }   // unique because displayName is unique
 
-    var displayName: String {
-        switch self {
-        case .auto: return "Auto-detect"
-        case .english: return "English"
-        case .german: return "Deutsch"
-        case .russian: return "Русский"
-        case .french: return "Français"
-        case .spanish: return "Español"
-        case .italian: return "Italiano"
-        case .portuguese: return "Português"
-        case .japanese: return "日本語"
-        case .chinese: return "中文"
-        case .ukrainian: return "Українська"
-        }
+    static let auto = TranscriptionLanguage(code: "", displayName: "Auto-detect")
+
+    /// Auto-detect first, then every WhisperKit language sorted A–Z by display name.
+    static let allCases: [TranscriptionLanguage] = {
+        let derived = Constants.languages
+            .map { TranscriptionLanguage(code: $0.value, displayName: $0.key.capitalized) }
+            .sorted { $0.displayName < $1.displayName }
+        return [.auto] + derived
+    }()
+
+    static func language(forCode code: String) -> TranscriptionLanguage {
+        allCases.first { $0.code == code } ?? .auto
     }
+
+    /// WhisperKit's own default language, used as a known non-auto reference.
+    static let english = language(forCode: Constants.defaultLanguageCode)
 }
 
 // MARK: - Model
@@ -234,7 +231,7 @@ class TranscriptionManager {
 
                 var options = DecodingOptions()
                 if selectedLanguage != .auto {
-                    options.language = selectedLanguage.rawValue
+                    options.language = selectedLanguage.code
                 }
 
                 let results = try await kit.transcribe(

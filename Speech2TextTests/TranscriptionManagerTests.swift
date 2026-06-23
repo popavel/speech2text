@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import AVFoundation
 import UniformTypeIdentifiers
+import WhisperKit
 
 @testable import Speech2Text
 
@@ -22,16 +23,27 @@ struct TranscriptionLanguageTests {
         #expect(Set(ids).count == ids.count)
     }
 
-    @Test("Auto-detect uses an empty raw value")
-    func autoHasEmptyRawValue() {
-        #expect(TranscriptionLanguage.auto.rawValue == "")
+    @Test("Auto-detect uses an empty code")
+    func autoHasEmptyCode() {
+        #expect(TranscriptionLanguage.auto.code == "")
     }
 
-    @Test("Non-auto cases use ISO 639-1 codes")
-    func nonAutoCasesUseISOCodes() {
+    @Test("Non-auto cases use valid WhisperKit language codes")
+    func nonAutoCasesUseValidCodes() {
         for language in TranscriptionLanguage.allCases where language != .auto {
-            #expect(language.rawValue.count == 2)
+            #expect(Constants.languageCodes.contains(language.code))
         }
+    }
+
+    @Test("Covers WhisperKit's full language set plus auto-detect")
+    func coversFullLanguageSet() {
+        #expect(TranscriptionLanguage.allCases.count == Constants.languages.count + 1)
+    }
+
+    @Test("English resolves to a non-auto entry derived from WhisperKit")
+    func englishIsDerivedFromWhisperKit() {
+        #expect(TranscriptionLanguage.english != .auto)
+        #expect(TranscriptionLanguage.english.displayName == "English")
     }
 }
 
