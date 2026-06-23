@@ -109,4 +109,31 @@ final class Speech2TextUITests: XCTestCase {
         XCTAssertEqual(statusTextValue, "Transcription complete")
         // Intentionally do NOT tap transcribeButton — it would load a model.
     }
+
+    func testLanguagePickerSearchAndSelect() {
+        // The picker is always visible — no preloaded files or stub result needed.
+        let app = launchApp()
+        let picker = app.buttons["languagePicker"]
+        assertExists(picker, timeout: 10)
+        // Defaults to Auto-detect; the value carries the selection (see accessibilityValue).
+        XCTAssertEqual(picker.value as? String, "Auto-detect")
+
+        // Open the popover → the search field appears.
+        picker.click()
+        let search = app.textFields["languageSearchField"]
+        assertExists(search)
+
+        // Filter to "German": the matching row appears and the default "Auto-detect"
+        // row (rendered first when unfiltered) drops out — proving the filter ran
+        // through the real popover, not just that some row exists.
+        search.click()
+        search.typeText("German")
+        assertExists(app.buttons["languageOption-German"])
+        XCTAssertFalse(app.buttons["languageOption-Auto-detect"].exists)
+
+        // Select it → the popover dismisses and the picker reflects the choice.
+        app.buttons["languageOption-German"].click()
+        XCTAssertFalse(search.exists)
+        XCTAssertEqual(picker.value as? String, "German")
+    }
 }

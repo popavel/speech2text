@@ -400,10 +400,7 @@ private struct LanguagePicker: View {
     @State private var searchText = ""
 
     private var filtered: [TranscriptionLanguage] {
-        guard !searchText.isEmpty else { return TranscriptionLanguage.allCases }
-        return TranscriptionLanguage.allCases.filter {
-            $0.displayName.localizedCaseInsensitiveContains(searchText)
-        }
+        TranscriptionLanguage.matching(searchText)
     }
 
     var body: some View {
@@ -421,6 +418,9 @@ private struct LanguagePicker: View {
         }
         .buttonStyle(.bordered)
         .accessibilityIdentifier("languagePicker")
+        // Surface the current selection as the a11y value so XCUITest can read it
+        // deterministically (same approach as fileCountLabel / statusText).
+        .accessibilityValue(selection.displayName)
         .onChange(of: isPresented) { _, presented in
             // Clear the filter whenever the popover closes (selection or outside-click),
             // so reopening always starts from the full list.
@@ -453,6 +453,9 @@ private struct LanguagePicker: View {
                                 .padding(.vertical, 4)
                             }
                             .buttonStyle(.plain)
+                            // displayName is unique per entry, so this is a stable,
+                            // collision-free handle for XCUITest (cf. removeFileButton-N).
+                            .accessibilityIdentifier("languageOption-\(language.displayName)")
                         }
                     }
                 }

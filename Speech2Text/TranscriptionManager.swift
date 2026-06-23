@@ -29,6 +29,14 @@ struct TranscriptionLanguage: Identifiable, Hashable, Sendable {
         allCases.first { $0.code == code } ?? .auto
     }
 
+    /// Languages whose display name matches `query` (case-insensitive, locale-aware
+    /// substring); an empty query returns the full list. The UI's `LanguagePicker`
+    /// reads from this so the filter is exercised by tests, not buried in the view.
+    static func matching(_ query: String) -> [TranscriptionLanguage] {
+        guard !query.isEmpty else { return allCases }
+        return allCases.filter { $0.displayName.localizedCaseInsensitiveContains(query) }
+    }
+
     /// WhisperKit's own default language, used as a known non-auto reference.
     static let english = language(forCode: Constants.defaultLanguageCode)
 }
