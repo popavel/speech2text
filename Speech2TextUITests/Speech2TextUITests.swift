@@ -123,17 +123,24 @@ final class Speech2TextUITests: XCTestCase {
         let search = app.textFields["languageSearchField"]
         assertExists(search)
 
-        // Filter to "German": the matching row appears and the default "Auto-detect"
-        // row (rendered first when unfiltered) drops out — proving the filter ran
-        // through the real popover, not just that some row exists.
+        // Filter to "German". The filter ran iff the unfiltered "Auto-detect" row drops
+        // out, so wait for its removal (the re-render is async) — that wait is the real
+        // proof, and it's what makes the subsequent German assertion meaningful (German
+        // is in the unfiltered list too, so on its own it would prove nothing).
         search.click()
         search.typeText("German")
+        XCTAssertTrue(
+            app.buttons["languageOption-Auto-detect"].waitForNonExistence(timeout: 5),
+            "Filter did not remove the Auto-detect row"
+        )
         assertExists(app.buttons["languageOption-German"])
-        XCTAssertFalse(app.buttons["languageOption-Auto-detect"].exists)
 
-        // Select it → the popover dismisses and the picker reflects the choice.
+        // Select it → the popover dismisses and the picker reflects the choice. The
+        // accessibilityValue updates on the next render after selection, so poll for it
+        // rather than reading a possibly-stale snapshot.
         app.buttons["languageOption-German"].click()
-        XCTAssertFalse(search.exists)
-        XCTAssertEqual(picker.value as? String, "German")
+        XCTAssertTrue(search.waitForNonExistence(timeout: 5))
+        expectation(for: NSPredicate(format: "value == %@", "German"), evaluatedWith: picker)
+        waitForExpectations(timeout: 5)
     }
 }

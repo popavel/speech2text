@@ -70,12 +70,13 @@ struct TranscriptionLanguageTests {
         #expect(TranscriptionLanguage.matching("zzzznotalanguage").isEmpty)
     }
 
-    @Test("Every match is drawn from the full language set")
-    func matchingResultsAreFromAllCases() {
-        let all = Set(TranscriptionLanguage.allCases)
-        for language in TranscriptionLanguage.matching("a") {
-            #expect(all.contains(language))
-        }
+    @Test("A whitespace-only or padded query is trimmed before matching")
+    func matchingTrimsWhitespace() {
+        // A blank query is treated as empty → full list, not filtered down to the lone
+        // space-containing name ("Haitian Creole").
+        #expect(TranscriptionLanguage.matching("   ") == TranscriptionLanguage.allCases)
+        // Leading/trailing padding around a real term still matches.
+        #expect(TranscriptionLanguage.matching("  english  ").contains(.english))
     }
 }
 
