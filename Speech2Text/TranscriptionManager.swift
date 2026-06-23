@@ -13,7 +13,7 @@ struct TranscriptionLanguage: Identifiable, Hashable, Sendable {
     let code: String        // "" = auto-detect, else a WhisperKit language code (may repeat across aliases)
     let displayName: String // unique per entry (the WhisperKit name, capitalized)
 
-    var id: String { code + displayName }   // unique because displayName is unique
+    var id: String { displayName }   // displayName is unique per entry
 
     static let auto = TranscriptionLanguage(code: "", displayName: "Auto-detect")
 
@@ -25,20 +25,18 @@ struct TranscriptionLanguage: Identifiable, Hashable, Sendable {
         return [.auto] + derived
     }()
 
-    static func language(forCode code: String) -> TranscriptionLanguage {
-        allCases.first { $0.code == code } ?? .auto
-    }
-
     /// Languages whose display name matches `query` (case-insensitive, locale-aware
-    /// substring); an empty query returns the full list. The UI's `LanguagePicker`
-    /// reads from this so the filter is exercised by tests, not buried in the view.
+    /// substring); a blank query (empty or whitespace-only) returns the full list. The
+    /// UI's `LanguagePicker` reads from this so the filter is exercised by tests, not
+    /// buried in the view.
     static func matching(_ query: String) -> [TranscriptionLanguage] {
-        guard !query.isEmpty else { return allCases }
-        return allCases.filter { $0.displayName.localizedCaseInsensitiveContains(query) }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return allCases }
+        return allCases.filter { $0.displayName.localizedCaseInsensitiveContains(trimmed) }
     }
 
     /// WhisperKit's own default language, used as a known non-auto reference.
-    static let english = language(forCode: Constants.defaultLanguageCode)
+    static let english = allCases.first { $0.code == Constants.defaultLanguageCode } ?? .auto
 }
 
 // MARK: - Model
