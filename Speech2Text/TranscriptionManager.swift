@@ -25,18 +25,25 @@ struct TranscriptionLanguage: Identifiable, Hashable, Sendable {
         return [.auto] + derived
     }()
 
-    /// Languages whose display name matches `query` (case-insensitive, locale-aware
+    /// Languages whose display name matches `query` (case-insensitive, locale-independent
     /// substring); a blank query (empty or whitespace-only) returns the full list. The
     /// UI's `LanguagePicker` reads from this so the filter is exercised by tests, not
     /// buried in the view.
+    ///
+    /// Display names are English words (capitalized WhisperKit keys), so the match is
+    /// pinned to `en_US_POSIX` rather than `Locale.current` — otherwise the Turkish/
+    /// Azerbaijani dotless-i case folding ('I'↔'ı') would make names like "Filipino" or
+    /// "Icelandic" unsearchable on those locales.
+    /// Cached so the per-keystroke filter doesn't rebuild it on every call.
+    private static let posixLocale = Locale(identifier: "en_US_POSIX")
+
     static func matching(_ query: String) -> [TranscriptionLanguage] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return allCases }
-        return allCases.filter { $0.displayName.localizedCaseInsensitiveContains(trimmed) }
+        return allCases.filter {
+            $0.displayName.range(of: trimmed, options: .caseInsensitive, range: nil, locale: posixLocale) != nil
+        }
     }
-
-    /// WhisperKit's own default language, used as a known non-auto reference.
-    static let english = allCases.first { $0.code == Constants.defaultLanguageCode } ?? .auto
 }
 
 // MARK: - Model

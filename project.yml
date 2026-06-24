@@ -37,7 +37,12 @@ targets:
   Speech2TextTests:
     type: bundle.unit-test
     platform: macOS
-    sources: [Speech2TextTests]
+    # Speech2TextTestSupport holds test-only fixtures shared with the integration
+    # target (e.g. TranscriptionLanguage.english), so they live in one place rather
+    # than on the shipped type.
+    sources:
+      - Speech2TextTests
+      - Speech2TextTestSupport
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.tests
@@ -59,6 +64,8 @@ targets:
           - "Fixtures/**"
       - path: Speech2TextIntegrationTests/Fixtures
         buildPhase: resources
+      # Shared test-only fixtures (see Speech2TextTests above).
+      - Speech2TextTestSupport
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.integrationtests
