@@ -394,6 +394,12 @@ struct ContentView: View {
 /// A searchable language picker. The full WhisperKit language set (~100 entries)
 /// is too long for a plain menu, so this presents the current selection as a button
 /// that opens a popover with a search field and a filtered, scrollable list.
+///
+/// `List` + `.searchable(text:)` was considered and rejected: `.searchable()` is only
+/// reliable inside a `NavigationStack`, and in a bare `.popover` it has known rough edges
+/// around search-field placement and content-driven sizing. Hence the hand-rolled
+/// `TextField` + `ScrollView`. Type-to-filter is the navigation model; arrow-key row
+/// cycling is intentionally not reimplemented, but Return selects the top match (`.onSubmit`).
 private struct LanguagePicker: View {
     @Binding var selection: TranscriptionLanguage
     @State private var isPresented = false
@@ -401,6 +407,13 @@ private struct LanguagePicker: View {
 
     private var filtered: [TranscriptionLanguage] {
         TranscriptionLanguage.matching(searchText)
+    }
+
+    /// Commit a selection and dismiss the popover. Shared by the row tap and the
+    /// Return-key (`.onSubmit`) path so the two can't drift.
+    private func select(_ language: TranscriptionLanguage) {
+        selection = language
+        isPresented = false
     }
 
     var body: some View {
@@ -432,13 +445,19 @@ private struct LanguagePicker: View {
                     .textFieldStyle(.roundedBorder)
                     .padding(8)
                     .accessibilityIdentifier("languageSearchField")
+                    // Return selects the top filtered match, so keyboard-only users can
+                    // type-then-Enter without reaching for the mouse.
+                    .onSubmit {
+                        if let first = filtered.first {
+                            select(first)
+                        }
+                    }
                 Divider()
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(filtered) { language in
                             Button {
-                                selection = language
-                                isPresented = false
+                                select(language)
                             } label: {
                                 HStack {
                                     Text(language.displayName)

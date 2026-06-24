@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		027BEFB2FCCBCAAAE83C7436 /* TranscriptionLanguage+Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDCC02578808684135ED8B7 /* TranscriptionLanguage+Fixtures.swift */; };
+		03C59C0DF2A8D77A52EB517E /* TranscriptionLanguage+Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDCC02578808684135ED8B7 /* TranscriptionLanguage+Fixtures.swift */; };
 		0C903B705524766242DBB7B3 /* tone.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A8C9D9F2A82D8AFB04CE7938 /* tone.mp3 */; };
 		1CF2C1794677E41DC96E69AA /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21AB074AFFC5D1AD1EE56710 /* ContentView.swift */; };
 		397D9D4FF6646B0BEF155EA8 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6D66FC1E4DBAE5C023DB0F5D /* WhisperKit */; };
@@ -57,6 +59,7 @@
 		21AB074AFFC5D1AD1EE56710 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		31574C4C2C482101D4B25A0B /* MediaFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaFixtures.swift; sourceTree = "<group>"; };
 		3668312EB0D98FBE6AACB6FF /* Speech2Text.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Speech2Text.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3DDCC02578808684135ED8B7 /* TranscriptionLanguage+Fixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TranscriptionLanguage+Fixtures.swift"; sourceTree = "<group>"; };
 		420FFF7A6196DB12A7DF261F /* ContentViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewTests.swift; sourceTree = "<group>"; };
 		77DC5DF9D0BF897ADE342AAA /* Speech2TextUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Speech2TextUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2BE429EBEFC2DB8C0617D82 /* Speech2TextTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Speech2TextTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -88,6 +91,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		3838B2C57A11B475E3C27641 /* Speech2TextTestSupport */ = {
+			isa = PBXGroup;
+			children = (
+				3DDCC02578808684135ED8B7 /* TranscriptionLanguage+Fixtures.swift */,
+			);
+			path = Speech2TextTestSupport;
+			sourceTree = "<group>";
+		};
 		532EA12A0F09722A12DD476D /* Fixtures */ = {
 			isa = PBXGroup;
 			children = (
@@ -134,6 +145,7 @@
 				FC91814D84CB100BE2B3A4FC /* Speech2Text */,
 				85F3862A8D40C1F7C9F461BC /* Speech2TextIntegrationTests */,
 				9D452FF7FFF7E69D91B11D2F /* Speech2TextTests */,
+				3838B2C57A11B475E3C27641 /* Speech2TextTestSupport */,
 				940A62FCDACDB2DC67142508 /* Speech2TextUITests */,
 				F787F08E4B0A84C91C437043 /* Products */,
 			);
@@ -306,6 +318,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CA01503AA66EAF3D136876CA /* ContentViewTests.swift in Sources */,
+				03C59C0DF2A8D77A52EB517E /* TranscriptionLanguage+Fixtures.swift in Sources */,
 				6588BBA074EF1F9318039BFE /* TranscriptionManagerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -327,6 +340,7 @@
 				5CCCC69CB4868E26C2B37BE7 /* AudioExtractionIntegrationTests.swift in Sources */,
 				9F0EF0DDF19E50E9959B1FA6 /* AudioFormatDecodabilityTests.swift in Sources */,
 				8C64B592EB1CD30DFC87E00D /* MediaFixtures.swift in Sources */,
+				027BEFB2FCCBCAAAE83C7436 /* TranscriptionLanguage+Fixtures.swift in Sources */,
 				A3F273342E6E6EF2526082E1 /* TranscriptionPipelineIntegrationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
