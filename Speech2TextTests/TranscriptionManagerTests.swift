@@ -28,10 +28,15 @@ struct TranscriptionLanguageTests {
         #expect(TranscriptionLanguage.auto.code == "")
     }
 
-    @Test("Non-auto cases use valid WhisperKit language codes")
-    func nonAutoCasesUseValidCodes() {
+    @Test("Each non-auto entry round-trips to its WhisperKit dictionary entry")
+    func nonAutoCasesRoundTripToWhisperKit() {
         for language in TranscriptionLanguage.allCases where language != .auto {
-            #expect(Constants.languageCodes.contains(language.code))
+            // displayName is the capitalized key; lowercasing recovers the key, which
+            // must map back to exactly this entry's code. This catches a key/value swap
+            // or a wrong-capitalization derivation bug — unlike a plain
+            // `languageCodes.contains(code)`, which is tautological here (every code is
+            // drawn from `languages.values`, and `languageCodes == Set(languages.values)`).
+            #expect(Constants.languages[language.displayName.lowercased()] == language.code)
         }
     }
 
@@ -44,6 +49,14 @@ struct TranscriptionLanguageTests {
     func englishIsDerivedFromWhisperKit() {
         #expect(TranscriptionLanguage.english != .auto)
         #expect(TranscriptionLanguage.english.displayName == "English")
+    }
+
+    @Test("WhisperKit still maps the default language code that the .english fixture derives from")
+    func defaultLanguageCodeHasAnEntry() {
+        // Names the precondition behind the `.english` fixture's `?? .auto` fallback: if a
+        // future WhisperKit drops/renames the default-code mapping, this fails with a clear
+        // message instead of surfacing indirectly as "expected English, got Auto-detect".
+        #expect(Constants.languages.values.contains(Constants.defaultLanguageCode))
     }
 
     // MARK: - matching(_:) — the searchable picker's filter predicate
@@ -77,6 +90,28 @@ struct TranscriptionLanguageTests {
         #expect(TranscriptionLanguage.matching("   ") == TranscriptionLanguage.allCases)
         // Leading/trailing padding around a real term still matches.
         #expect(TranscriptionLanguage.matching("  english  ").contains(.english))
+    }
+
+    // MARK: - submitSelection(_:) — the Return-key (.onSubmit) target
+
+    @Test("Return on a real query selects the top match")
+    func submitSelectionPicksTopMatch() {
+        #expect(TranscriptionLanguage.submitSelection(for: "english") == .english)
+        // Padding around a real term still resolves to the same match.
+        #expect(TranscriptionLanguage.submitSelection(for: "  english  ") == .english)
+    }
+
+    @Test("Return on a blank query selects nothing (preserves the current selection)")
+    func submitSelectionBlankSelectsNothing() {
+        // Crucially NOT .auto: matching("") returns the full list whose first entry is
+        // Auto-detect, so a naive `filtered.first` would silently reset the selection.
+        #expect(TranscriptionLanguage.submitSelection(for: "") == nil)
+        #expect(TranscriptionLanguage.submitSelection(for: "   ") == nil)
+    }
+
+    @Test("Return on a no-match query selects nothing")
+    func submitSelectionNoMatchSelectsNothing() {
+        #expect(TranscriptionLanguage.submitSelection(for: "zzzznotalanguage") == nil)
     }
 }
 

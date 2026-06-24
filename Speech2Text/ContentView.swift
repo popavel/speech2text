@@ -445,11 +445,16 @@ private struct LanguagePicker: View {
                     .textFieldStyle(.roundedBorder)
                     .padding(8)
                     .accessibilityIdentifier("languageSearchField")
-                    // Return selects the top filtered match, so keyboard-only users can
-                    // type-then-Enter without reaching for the mouse.
+                    // Return selects the top match for a real query, so keyboard-only
+                    // users can type-then-Enter without reaching for the mouse. A blank
+                    // query just dismisses — it must NOT select `filtered.first` (which
+                    // is Auto-detect on the unfiltered list), or Return on an empty field
+                    // would silently clobber the current selection.
                     .onSubmit {
-                        if let first = filtered.first {
-                            select(first)
+                        if let target = TranscriptionLanguage.submitSelection(for: searchText) {
+                            select(target)
+                        } else {
+                            isPresented = false
                         }
                     }
                 Divider()
