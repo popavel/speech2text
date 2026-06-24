@@ -25,24 +25,28 @@ struct TranscriptionLanguage: Identifiable, Hashable, Sendable {
         return [.auto] + derived
     }()
 
-    /// Languages whose display name matches `query` (case-insensitive, locale-independent
-    /// substring); a blank query (empty or whitespace-only) returns the full list. The
-    /// UI's `LanguagePicker` reads from this so the filter is exercised by tests, not
-    /// buried in the view.
+    /// Languages whose display name contains `query` (case-insensitive substring); a blank
+    /// query (empty or whitespace-only) returns the full list. The UI's `LanguagePicker`
+    /// reads from this so the filter is exercised by tests, not buried in the view.
     ///
-    /// Display names are English words (capitalized WhisperKit keys), so the match is
-    /// pinned to `en_US_POSIX` rather than `Locale.current` — otherwise the Turkish/
-    /// Azerbaijani dotless-i case folding ('I'↔'ı') would make names like "Filipino" or
-    /// "Icelandic" unsearchable on those locales.
-    /// Cached so the per-keystroke filter doesn't rebuild it on every call.
-    private static let posixLocale = Locale(identifier: "en_US_POSIX")
-
+    /// `lowercased()` (no `with:` locale) is Unicode default case folding, which is
+    /// locale-independent — so this avoids the Turkish/Azerbaijani dotless-i hazard
+    /// ('I'↔'ı') without needing to pin a locale.
     static func matching(_ query: String) -> [TranscriptionLanguage] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return allCases }
-        return allCases.filter {
-            $0.displayName.range(of: trimmed, options: .caseInsensitive, range: nil, locale: posixLocale) != nil
-        }
+        let lowercasedQuery = trimmed.lowercased()
+        return allCases.filter { $0.displayName.lowercased().contains(lowercasedQuery) }
+    }
+
+    /// The language to commit when the user presses Return in the search field: the
+    /// top match for a real query, or `nil` for a blank (empty/whitespace) query.
+    /// Lives here (not in the view) so the "blank Return selects nothing" rule is
+    /// tested directly — without it, `matching("").first` is `.auto`, so Return on an
+    /// empty field would silently reset the current selection to Auto-detect.
+    static func submitSelection(for query: String) -> TranscriptionLanguage? {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return matching(query).first
     }
 }
 
