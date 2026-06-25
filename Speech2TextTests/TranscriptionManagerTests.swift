@@ -136,9 +136,13 @@ struct WhisperModelTests {
     @Test("Includes the medium and full large-v3 models")
     func includesMediumAndLargeV3() {
         let raws = Set(WhisperModel.allCases.map(\.rawValue))
-        #expect(raws.contains("openai_whisper-medium"))
-        #expect(raws.contains("openai_whisper-large-v3"))
         #expect(WhisperModel.allCases.count == 6)
+        #expect(raws.contains("openai_whisper-tiny"))
+        #expect(raws.contains("openai_whisper-base"))
+        #expect(raws.contains("openai_whisper-small"))
+        #expect(raws.contains("openai_whisper-medium"))
+        #expect(raws.contains("openai_whisper-large-v3-turbo"))
+        #expect(raws.contains("openai_whisper-large-v3"))
     }
 }
 
