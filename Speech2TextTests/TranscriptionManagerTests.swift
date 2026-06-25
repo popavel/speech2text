@@ -132,6 +132,14 @@ struct WhisperModelTests {
             #expect(model.rawValue.hasPrefix("openai_whisper-"))
         }
     }
+
+    @Test("Includes the medium and full large-v3 models")
+    func includesMediumAndLargeV3() {
+        let raws = Set(WhisperModel.allCases.map(\.rawValue))
+        #expect(raws.contains("openai_whisper-medium"))
+        #expect(raws.contains("openai_whisper-large-v3"))
+        #expect(WhisperModel.allCases.count == 6)
+    }
 }
 
 // MARK: - TranscriptionStatus
