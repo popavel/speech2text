@@ -56,8 +56,7 @@ enum WhisperModel: String, CaseIterable, Identifiable {
     case tiny = "openai_whisper-tiny"
     case base = "openai_whisper-base"
     case small = "openai_whisper-small"
-    case medium = "openai_whisper-medium"
-    case largeTurbo = "openai_whisper-large-v3-turbo"
+    case largeTurbo = "openai_whisper-large-v3_turbo"
     case largeV3 = "openai_whisper-large-v3"
 
     var id: String { rawValue }
@@ -67,7 +66,6 @@ enum WhisperModel: String, CaseIterable, Identifiable {
         case .tiny: return "Tiny (~75 MB, fastest)"
         case .base: return "Base (~142 MB)"
         case .small: return "Small (~466 MB)"
-        case .medium: return "Medium (~1.5 GB)"
         case .largeTurbo: return "Large V3 Turbo (~1.5 GB, fast)"
         case .largeV3: return "Large V3 (~2.9 GB, most accurate)"
         }

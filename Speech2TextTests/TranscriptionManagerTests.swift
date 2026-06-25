@@ -133,16 +133,31 @@ struct WhisperModelTests {
         }
     }
 
-    @Test("Includes the medium and full large-v3 models")
-    func includesMediumAndLargeV3() {
+    @Test("Offers the expected curated model set")
+    func offersExpectedModels() {
         let raws = Set(WhisperModel.allCases.map(\.rawValue))
-        #expect(WhisperModel.allCases.count == 6)
+        #expect(WhisperModel.allCases.count == 5)
         #expect(raws.contains("openai_whisper-tiny"))
         #expect(raws.contains("openai_whisper-base"))
         #expect(raws.contains("openai_whisper-small"))
-        #expect(raws.contains("openai_whisper-medium"))
-        #expect(raws.contains("openai_whisper-large-v3-turbo"))
+        #expect(raws.contains("openai_whisper-large-v3_turbo"))
         #expect(raws.contains("openai_whisper-large-v3"))
+    }
+
+    /// Drift guard: every curated raw value must be a real WhisperKit model name.
+    /// `WhisperKit(model:)` passes `rawValue` straight to `download(variant:)`, which
+    /// resolves it against the repo — a typo (e.g. `-turbo` vs `_turbo`) only surfaces at
+    /// download time, as a runtime error. `Constants.knownModels` is WhisperKit's offline,
+    /// device-independent model list, so this catches such drift on every CI build with no
+    /// network call.
+    @Test("Every model raw value is a known WhisperKit model")
+    func rawValuesAreKnownToWhisperKit() {
+        for model in WhisperModel.allCases {
+            #expect(
+                Constants.knownModels.contains(model.rawValue),
+                "\(model.rawValue) is not in WhisperKit's known models"
+            )
+        }
     }
 }
 
