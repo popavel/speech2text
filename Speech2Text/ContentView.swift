@@ -7,22 +7,21 @@ struct ContentView: View {
     @State private var showFileImporter = false
 
     init() {
-        let manager = TranscriptionManager()
-        #if DEBUG
-        manager.applyUITestSeamIfPresent()
-        #endif
-        _manager = State(initialValue: manager)
+        // #Preview-only now: the app injects a shared manager via init(manager:), and the
+        // XCUITest launch seam is applied once in Speech2TextApp.init().
+        _manager = State(initialValue: TranscriptionManager())
     }
 
-    #if DEBUG
-    /// Test seam: inject a pre-configured manager so view tests can set up state
-    /// (files, status, results) before inspecting the rendered hierarchy. Compiled
-    /// out of Release — the app uses the zero-arg `init()`; only the in-process
-    /// ViewInspector suite (Debug) constructs a view with a pre-built manager.
+    /// Inject a pre-configured manager. Two callers: the app constructs the shared
+    /// `TranscriptionManager` once at the `Speech2TextApp` level and hands the same
+    /// instance to both this view and the Settings scene — so "Delete Downloaded Models"
+    /// in Settings resets the very engine this window is using, and the delete button can
+    /// see this window's `isProcessing`. The in-process ViewInspector suite also uses this
+    /// init to seed state before inspecting the hierarchy. The zero-arg `init()` above
+    /// remains the `#Preview` path.
     init(manager: TranscriptionManager) {
         _manager = State(initialValue: manager)
     }
-    #endif
 
     var body: some View {
         VStack(spacing: 20) {
@@ -486,6 +485,94 @@ private struct LanguagePicker: View {
             }
             .frame(width: 240, height: 320)
         }
+    }
+}
+
+// MARK: - Settings
+
+/// The app's Settings scene (Cmd-,). A single "Storage" section that reports the size of
+/// the downloaded WhisperKit model cache and lets the user delete it — the in-app half of
+/// a graceful uninstall (macOS has no uninstaller hook, so an app can't clean up after
+/// it's been trashed). It receives the app-level `TranscriptionManager` so deletion drops
+/// the same live engine the main window uses, and the delete button can disable itself
+/// while that window is transcribing.
+struct SettingsView: View {
+    let manager: TranscriptionManager
+
+    @State private var cacheBytes: Int64?
+    @State private var isWorking = false
+    @State private var showDeleteConfirmation = false
+
+    var body: some View {
+        Form {
+            Section("Storage") {
+                LabeledContent("Downloaded models") {
+                    Text(cacheSizeText)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("cacheSizeLabel")
+                }
+
+                Button("Delete Downloaded Models", role: .destructive) {
+                    showDeleteConfirmation = true
+                }
+                .disabled(manager.isProcessing || isWorking || (cacheBytes ?? 0) == 0)
+                .accessibilityIdentifier("deleteModelsButton")
+
+                if manager.isProcessing {
+                    Text("Unavailable while a transcription is running.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 420, height: 200)
+        .task { await refreshSize() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            // macOS builds the Settings window once and merely hides it on close, so
+            // `.task` never re-fires on reopen — without this, a model downloaded after the
+            // window was first built would never show (and Delete would stay disabled).
+            // Refresh on key-window changes; the walk is off the main actor and cheap.
+            Task { await refreshSize() }
+        }
+        .confirmationDialog(
+            "Delete all downloaded transcription models?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    isWorking = true
+                    await manager.deleteAllModels()
+                    await refreshSize()
+                    isWorking = false
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(confirmationMessage)
+        }
+    }
+
+    private var cacheSizeText: String {
+        guard let cacheBytes else { return "Calculating…" }
+        return cacheBytes > 0 ? Self.formatted(cacheBytes) : "None"
+    }
+
+    private var confirmationMessage: String {
+        let reDownloadNote = "Models will re-download the next time you transcribe."
+        if let cacheBytes, cacheBytes > 0 {
+            return "This frees \(Self.formatted(cacheBytes)). \(reDownloadNote)"
+        }
+        return "This deletes the downloaded models. \(reDownloadNote)"
+    }
+
+    private static func formatted(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private func refreshSize() async {
+        cacheBytes = await manager.currentCacheSize()
     }
 }
 
