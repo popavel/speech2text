@@ -133,7 +133,7 @@ Three Swift files do all the real work; the UI is intentionally thin.
 
 **State flow** is one-way: UI mutates `selectedLanguage`/`selectedModel`/`droppedFileURLs`, calls `startTranscription()`, then renders from `status` + `transcriptionResult`. Don't add parallel state in views.
 
-**WhisperKit models** are downloaded on first use into a per-user cache (not bundled). First run with a given model can be slow. `*.bin` and `*.mlmodelc` are gitignored.
+**WhisperKit models** are downloaded on first use (not bundled); first run with a given model can be slow, and `*.bin`/`*.mlmodelc` are gitignored. The download location is overridden via WhisperKit's `downloadBase:` to the app-owned `~/Library/Application Support/com.speech2text.app/models` (see `TranscriptionManager.modelCacheDirectory`) — *not* WhisperKit's default `~/Documents/huggingface`, which would dump gigabytes into the user's Documents. `TranscriptionManager` exposes `currentCacheSize()`/`deleteAllModels()` (the heavy filesystem walk runs off the `@MainActor`), and the `Settings` scene (`SettingsView` in `ContentView.swift`) lets users delete that cache — the in-app half of a graceful uninstall.
 
 **WhisperKit dependency** in `project.yml` tracks the latest release via `from: "1.0.0"` (SwiftPM up-to-next-major — newest `1.x` release, never a breaking `2.0`). Major bumps are manual; the weekly drift check covers `1.x` drift. Be aware when debugging upstream API drift.
 

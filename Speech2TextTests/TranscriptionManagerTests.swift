@@ -282,6 +282,19 @@ struct TranscriptionManagerTests {
         #expect(!manager.skippedFileNames.isEmpty)
     }
 
+    // MARK: deleteAllModels
+
+    @Test("deleteAllModels refuses while a transcription is in progress")
+    func deleteAllModelsRefusesWhileProcessing() async {
+        let manager = TranscriptionManager()
+        manager.status = .transcribing(progress: 0.5)
+        // The guard returns before any filesystem work, so this stays hermetic — it
+        // never touches the real cache directory.
+        let reclaimed = await manager.deleteAllModels()
+        #expect(reclaimed == 0)
+        #expect(manager.status == .transcribing(progress: 0.5))
+    }
+
     @Test("Treats extensions case-insensitively")
     func extensionsAreCaseInsensitive() {
         let manager = TranscriptionManager()
@@ -540,5 +553,85 @@ struct SupportedExtensionsTests {
         let before = manager.droppedFileURLs.count
         manager.addFiles([URL(fileURLWithPath: "/tmp/test.xyz")])
         #expect(manager.droppedFileURLs.count == before)
+    }
+}
+
+// MARK: - Model Cache Storage
+
+/// Exercises the `nonisolated static` cache-size/delete helpers that back the
+/// Settings → Storage cleanup. They take a `URL`, so every test runs against an
+/// isolated temp directory — no model download, no touching the real
+/// `~/Library/Application Support`, no network.
+@Suite("Model cache storage")
+struct ModelCacheStorageTests {
+
+    /// A fresh, empty temp directory unique to one test. Caller is responsible for
+    /// removing it (tests use `defer`).
+    private func makeTempDir() -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Write `byteCount` bytes of non-zero data (avoids any sparse-file optimization
+    /// that could make an all-zero file report less allocated space than written).
+    private func write(_ byteCount: Int, to url: URL) {
+        try? Data(repeating: 0xAB, count: byteCount).write(to: url)
+    }
+
+    @Test("cacheSize sums regular files recursively, including nested subdirectories")
+    func cacheSizeSumsFilesRecursively() throws {
+        let dir = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        write(5_000, to: dir.appendingPathComponent("a.bin"))
+        let nested = dir.appendingPathComponent("nested", isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        write(5_000, to: nested.appendingPathComponent("b.bin"))
+
+        // Allocated size rounds up to the filesystem block, so assert a lower bound
+        // (>= the bytes written) rather than an exact figure.
+        #expect(TranscriptionManager.cacheSize(of: dir) >= 10_000)
+    }
+
+    @Test("cacheSize grows when more data is present")
+    func cacheSizeIsMonotonic() {
+        let small = makeTempDir(); defer { try? FileManager.default.removeItem(at: small) }
+        let large = makeTempDir(); defer { try? FileManager.default.removeItem(at: large) }
+        write(4_000, to: small.appendingPathComponent("one.bin"))
+        write(4_000, to: large.appendingPathComponent("one.bin"))
+        write(4_000, to: large.appendingPathComponent("two.bin"))
+        #expect(TranscriptionManager.cacheSize(of: large) > TranscriptionManager.cacheSize(of: small))
+    }
+
+    @Test("cacheSize of a nonexistent directory is zero")
+    func cacheSizeMissingIsZero() {
+        let ghost = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        #expect(TranscriptionManager.cacheSize(of: ghost) == 0)
+    }
+
+    @Test("deleteCache removes the directory and reports the bytes reclaimed")
+    func deleteRemovesAndReports() {
+        let dir = makeTempDir()
+        write(6_000, to: dir.appendingPathComponent("model.bin"))
+        let reclaimed = TranscriptionManager.deleteCache(at: dir)
+        #expect(reclaimed >= 6_000)
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
+    }
+
+    @Test("deleteCache on a missing directory reclaims zero and does not throw")
+    func deleteMissingIsZero() {
+        let ghost = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        #expect(TranscriptionManager.deleteCache(at: ghost) == 0)
+        #expect(!FileManager.default.fileExists(atPath: ghost.path))
+    }
+
+    @Test("modelCacheDirectory lives under Application Support, namespaced to the bundle id")
+    func modelCacheDirectoryLocation() {
+        let path = TranscriptionManager.modelCacheDirectory.path
+        #expect(path.contains("Application Support"))
+        #expect(path.contains("com.speech2text.app"))
+        #expect(path.hasSuffix("models"))
     }
 }

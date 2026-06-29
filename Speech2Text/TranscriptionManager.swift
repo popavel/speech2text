@@ -231,7 +231,9 @@ class TranscriptionManager {
         do {
             let modelName = selectedModel.rawValue
             if whisperKit == nil || loadedModel != modelName {
-                whisperKit = try await WhisperKit(model: modelName)
+                // downloadBase keeps models in our app-owned Application Support folder
+                // (see modelCacheDirectory) instead of the Hub default ~/Documents/huggingface.
+                whisperKit = try await WhisperKit(model: modelName, downloadBase: Self.modelCacheDirectory)
                 loadedModel = modelName
             }
 
@@ -320,6 +322,96 @@ class TranscriptionManager {
         }
 
         return outputURL
+    }
+
+    // MARK: - Model Cache / Storage
+
+    /// App-owned directory where WhisperKit models are downloaded. Passed as
+    /// `downloadBase` when constructing WhisperKit (see `startTranscription()`) so models
+    /// live under Application Support — the macOS-sanctioned home for app-managed data —
+    /// instead of polluting the user's `~/Documents/huggingface`. Being the single source
+    /// of truth here means the download path and the cleanup path (`deleteAllModels`)
+    /// can't drift apart.
+    ///
+    /// `create: false`: reading a path shouldn't have the side effect of creating the
+    /// folder. WhisperKit/Hub creates the tree on demand when it actually downloads.
+    /// The bundle-id segment is hard-coded (mirrors `PRODUCT_BUNDLE_IDENTIFIER`) rather
+    /// than read from `Bundle.main`, so the path is identical under the test host.
+    nonisolated static var modelCacheDirectory: URL {
+        let appSupport = (try? FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        )) ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support", isDirectory: true)
+        return appSupport
+            .appendingPathComponent("com.speech2text.app", isDirectory: true)
+            .appendingPathComponent("models", isDirectory: true)
+    }
+
+    /// Total bytes on disk under `directory` (recursive sum of regular-file allocated
+    /// sizes). Returns 0 when the directory doesn't exist or can't be enumerated.
+    /// `nonisolated static` so the recursive walk runs off the `@MainActor` and is
+    /// unit-testable against a temp directory with no manager instance or network.
+    nonisolated static func cacheSize(of directory: URL) -> Int64 {
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
+        ]
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: Array(keys)
+        ) else { return 0 }
+
+        var total: Int64 = 0
+        for case let url as URL in enumerator {
+            guard let values = try? url.resourceValues(forKeys: keys),
+                  values.isRegularFile == true else { continue }
+            // totalFileAllocatedSize includes metadata/resource forks; fall back to the
+            // plain allocated size if the richer key is unavailable.
+            total += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)
+        }
+        return total
+    }
+
+    /// Delete `directory` and report the bytes reclaimed (measured before removal).
+    /// Best-effort: a missing directory reclaims 0 and is not an error. `nonisolated
+    /// static` for the same off-actor / testability reasons as `cacheSize(of:)`.
+    @discardableResult
+    nonisolated static func deleteCache(at directory: URL) -> Int64 {
+        let size = cacheSize(of: directory)
+        do {
+            try FileManager.default.removeItem(at: directory)
+            return size
+        } catch {
+            return 0
+        }
+    }
+
+    /// Bytes currently occupied by the downloaded model cache. The filesystem walk runs
+    /// off the main actor.
+    func currentCacheSize() async -> Int64 {
+        let dir = Self.modelCacheDirectory
+        return await Task.detached(priority: .utility) {
+            Self.cacheSize(of: dir)
+        }.value
+    }
+
+    /// Delete all downloaded models, returning bytes reclaimed. Refuses (returns 0) while
+    /// a transcription is in flight — deleting model files out from under a live
+    /// `transcribe(...)` would corrupt the run. After a successful delete the in-memory
+    /// engine is dropped (`whisperKit`/`loadedModel` reset) so the next
+    /// `startTranscription()` takes the `whisperKit == nil` path and re-downloads cleanly.
+    @discardableResult
+    func deleteAllModels() async -> Int64 {
+        guard !isProcessing else { return 0 }
+        let dir = Self.modelCacheDirectory
+        let reclaimed = await Task.detached(priority: .utility) {
+            Self.deleteCache(at: dir)
+        }.value
+        whisperKit = nil
+        loadedModel = nil
+        return reclaimed
     }
 }
 

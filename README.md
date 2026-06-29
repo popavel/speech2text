@@ -118,6 +118,21 @@ Then restart the LSP server as above. To confirm the module made it in: `python3
 
 > The first transcription with a new model can take a while as the model is downloaded and compiled for your device.
 
+## Uninstalling
+
+macOS has no uninstaller hook — an app can't run cleanup code once it's been dragged to the Trash — so removing Speech2Text is two steps:
+
+1. **Reclaim the model cache.** Downloaded Whisper models can be several GB. The easiest way to remove them is in-app, *before* deleting the app: open **Settings (⌘,) → Storage → Delete Downloaded Models**.
+2. **Trash the app.** Quit Speech2Text and move **Speech2Text.app** to the Trash.
+
+If you skip step 1, delete the cache folder by hand:
+
+```
+~/Library/Application Support/com.speech2text.app/
+```
+
+That folder is the **only** data Speech2Text writes outside its own bundle. It stores no preferences (there is no `~/Library/Preferences/com.speech2text.app.plist`) and, being non-sandboxed, nothing under `~/Library/Containers/`.
+
 ## Project Structure
 
 ```
