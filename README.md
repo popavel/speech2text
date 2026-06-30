@@ -131,7 +131,15 @@ If you skip step 1, delete the cache folder by hand:
 ~/Library/Application Support/com.speech2text.app/
 ```
 
-That folder is the **only** data Speech2Text writes outside its own bundle. It stores no preferences (there is no `~/Library/Preferences/com.speech2text.app.plist`) and, being non-sandboxed, nothing under `~/Library/Containers/`.
+That folder holds the only data worth reclaiming — the downloaded models, which can be several GB. macOS itself also keeps a few small, system-managed files for the app (each typically a few MB): a window-position preference and the URLSession caches created while downloading models. To remove every last trace, also delete:
+
+```
+~/Library/Preferences/com.speech2text.app.plist
+~/Library/Caches/Speech2Text/
+~/Library/HTTPStorages/Speech2Text/
+```
+
+Being non-sandboxed, Speech2Text writes nothing under `~/Library/Containers/`.
 
 ## Project Structure
 

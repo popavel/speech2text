@@ -295,6 +295,36 @@ struct TranscriptionManagerTests {
         #expect(manager.status == .transcribing(progress: 0.5))
     }
 
+    @Test("Cannot start transcription while a model deletion is in progress")
+    func cannotTranscribeWhileDeletingModels() {
+        let manager = TranscriptionManager()
+        manager.addFiles([URL(fileURLWithPath: "/tmp/clip.mp3")])
+        manager.status = .deletingModels
+        // The deletion busy-state must gate the main window's Transcribe button so a
+        // transcription can't start mid-delete and race the cache removal.
+        #expect(!manager.canTranscribe)
+    }
+
+    @Test("startTranscription is a no-op while a model deletion is in progress")
+    func startTranscriptionIsNoOpWhileDeletingModels() async {
+        let manager = TranscriptionManager()
+        manager.addFiles([URL(fileURLWithPath: "/tmp/clip.mp3")])
+        manager.status = .deletingModels
+        // Guard returns before any WhisperKit/network work, so this stays hermetic.
+        await manager.startTranscription()
+        #expect(manager.status == .deletingModels)
+    }
+
+    @Test("deleteAllModels refuses while another deletion is already in progress")
+    func deleteAllModelsRefusesWhileAlreadyDeleting() async {
+        let manager = TranscriptionManager()
+        manager.status = .deletingModels
+        // Re-entrancy guard: returns before any filesystem work, so this stays hermetic.
+        let reclaimed = await manager.deleteAllModels()
+        #expect(reclaimed == 0)
+        #expect(manager.status == .deletingModels)
+    }
+
     @Test("Treats extensions case-insensitively")
     func extensionsAreCaseInsensitive() {
         let manager = TranscriptionManager()
