@@ -80,6 +80,7 @@ enum TranscriptionStatus: Equatable {
     case transcribing(progress: Double)
     case completed
     case error(String)
+    case deletingModels
 }
 
 // MARK: - Errors
@@ -140,8 +141,13 @@ class TranscriptionManager {
         }
     }
 
+    /// Whether a model-cache deletion is in flight. Kept separate from `isProcessing`
+    /// (which means "a transcription is running") so the SettingsView caption can stay
+    /// transcription-specific while `canTranscribe` still blocks during a delete.
+    var isDeletingModels: Bool { status == .deletingModels }
+
     var canTranscribe: Bool {
-        !droppedFileURLs.isEmpty && !isProcessing
+        !droppedFileURLs.isEmpty && !isProcessing && !isDeletingModels
     }
 
     var statusMessage: String {
@@ -154,6 +160,7 @@ class TranscriptionManager {
                 : "Transcribing..."
         case .completed: return "Transcription complete"
         case .error(let msg): return "Error: \(msg)"
+        case .deletingModels: return "Deleting downloaded models..."
         }
     }
 
@@ -404,13 +411,24 @@ class TranscriptionManager {
     /// `startTranscription()` takes the `whisperKit == nil` path and re-downloads cleanly.
     @discardableResult
     func deleteAllModels() async -> Int64 {
-        guard !isProcessing else { return 0 }
+        guard !isProcessing, !isDeletingModels else { return 0 }
+        // Publish the busy state *synchronously*, before the first suspension, so a
+        // transcription started concurrently (also on the main actor) sees
+        // `canTranscribe == false` and can't begin reading/writing the directory while
+        // it is being removed. Restored once the engine has been dropped.
+        let previousStatus = status
+        status = .deletingModels
         let dir = Self.modelCacheDirectory
         let reclaimed = await Task.detached(priority: .utility) {
             Self.deleteCache(at: dir)
         }.value
         whisperKit = nil
         loadedModel = nil
+        // Only restore if nothing else changed the status during the await (e.g. the user
+        // hit Clear, which sets `.idle`) — that intent should win over our restore.
+        if status == .deletingModels {
+            status = previousStatus
+        }
         return reclaimed
     }
 }

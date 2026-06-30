@@ -2,25 +2,21 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
-    @State private var manager: TranscriptionManager
+    /// The app-owned shared `TranscriptionManager`, injected (not owned) by this view.
+    /// `@Bindable` rather than `@State`: the manager's lifetime belongs to `Speech2TextApp`
+    /// (which holds it in `@State` and hands the same instance to both this window and the
+    /// Settings scene). `@Bindable` observes that instance and still exposes the `$manager.…`
+    /// bindings the pickers/editor need, without re-wrapping it in this view's own state —
+    /// so the view can never pin a stale manager if the app later supplies a new one.
+    @Bindable var manager: TranscriptionManager
     @State private var isDragTargeted = false
     @State private var showFileImporter = false
 
-    init() {
-        // #Preview-only now: the app injects a shared manager via init(manager:), and the
-        // XCUITest launch seam is applied once in Speech2TextApp.init().
-        _manager = State(initialValue: TranscriptionManager())
-    }
-
-    /// Inject a pre-configured manager. Two callers: the app constructs the shared
-    /// `TranscriptionManager` once at the `Speech2TextApp` level and hands the same
-    /// instance to both this view and the Settings scene — so "Delete Downloaded Models"
-    /// in Settings resets the very engine this window is using, and the delete button can
-    /// see this window's `isProcessing`. The in-process ViewInspector suite also uses this
-    /// init to seed state before inspecting the hierarchy. The zero-arg `init()` above
-    /// remains the `#Preview` path.
+    /// Inject the shared manager. Callers: `Speech2TextApp` (the real app + XCUITest path),
+    /// the in-process ViewInspector suite (seeds state before inspecting the hierarchy), and
+    /// `#Preview` (a throwaway instance).
     init(manager: TranscriptionManager) {
-        _manager = State(initialValue: manager)
+        _manager = Bindable(manager)
     }
 
     var body: some View {
@@ -499,9 +495,12 @@ private struct LanguagePicker: View {
 struct SettingsView: View {
     let manager: TranscriptionManager
 
+    @Environment(\.controlActiveState) private var controlActiveState
+
     @State private var cacheBytes: Int64?
     @State private var isWorking = false
     @State private var showDeleteConfirmation = false
+    @State private var refreshTask: Task<Void, Never>?
 
     var body: some View {
         Form {
@@ -527,13 +526,15 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 420, height: 200)
-        .task { await refreshSize() }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+        .task { refreshSize() }
+        .onChange(of: controlActiveState) { _, state in
             // macOS builds the Settings window once and merely hides it on close, so
-            // `.task` never re-fires on reopen — without this, a model downloaded after the
-            // window was first built would never show (and Delete would stay disabled).
-            // Refresh on key-window changes; the walk is off the main actor and cheap.
-            Task { await refreshSize() }
+            // `.task` never re-fires on reopen — a model downloaded after the window was
+            // first built would otherwise never show (and Delete would stay disabled).
+            // `controlActiveState` is scoped to *this* window, so it flips to `.key` only
+            // when the Settings window itself regains focus — unlike a global
+            // didBecomeKey notification, which fired for every window app-wide.
+            if state == .key { refreshSize() }
         }
         .confirmationDialog(
             "Delete all downloaded transcription models?",
@@ -544,8 +545,8 @@ struct SettingsView: View {
                 Task {
                     isWorking = true
                     await manager.deleteAllModels()
-                    await refreshSize()
                     isWorking = false
+                    refreshSize()
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -560,22 +561,29 @@ struct SettingsView: View {
     }
 
     private var confirmationMessage: String {
-        let reDownloadNote = "Models will re-download the next time you transcribe."
-        if let cacheBytes, cacheBytes > 0 {
-            return "This frees \(Self.formatted(cacheBytes)). \(reDownloadNote)"
-        }
-        return "This deletes the downloaded models. \(reDownloadNote)"
+        // The Delete button is disabled when the cache is empty, so the dialog only ever
+        // presents with cacheBytes > 0; the `?? ""` is an unreachable safety fallback.
+        let freedPrefix = cacheBytes.map { "This frees \(Self.formatted($0)). " } ?? ""
+        return "\(freedPrefix)Models will re-download the next time you transcribe."
     }
 
     private static func formatted(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
-    private func refreshSize() async {
-        cacheBytes = await manager.currentCacheSize()
+    /// Recompute the cache size off the main actor. Serialized: a new call cancels the
+    /// previous in-flight walk and drops its result, so a slow pre-delete walk can never
+    /// resolve after a post-delete one and stale-overwrite `cacheBytes`.
+    private func refreshSize() {
+        refreshTask?.cancel()
+        refreshTask = Task {
+            let bytes = await manager.currentCacheSize()
+            guard !Task.isCancelled else { return }
+            cacheBytes = bytes
+        }
     }
 }
 
 #Preview {
-    ContentView()
+    ContentView(manager: TranscriptionManager())
 }
