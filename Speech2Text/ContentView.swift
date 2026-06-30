@@ -231,7 +231,7 @@ struct ContentView: View {
                 case .completed:
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                case .loadingModel, .transcribing:
+                case .loadingModel, .transcribing, .deletingModels:
                     Image(systemName: "circle.dotted")
                         .foregroundStyle(.blue)
                 default:
@@ -572,11 +572,14 @@ struct SettingsView: View {
     }
 
     /// Recompute the cache size off the main actor. Serialized: a new call cancels the
-    /// previous in-flight walk and drops its result, so a slow pre-delete walk can never
-    /// resolve after a post-delete one and stale-overwrite `cacheBytes`.
+    /// previous task, and cancellation now propagates into the walk itself (the
+    /// `cacheSize` loop bails on `Task.isCancelled`), so a superseded pre-delete walk is
+    /// aborted rather than left to finish — and its partial result is dropped here too,
+    /// so it can never resolve after a post-delete walk and stale-overwrite `cacheBytes`.
+    /// `.utility` priority keeps the background size calc off the foreground's back.
     private func refreshSize() {
         refreshTask?.cancel()
-        refreshTask = Task {
+        refreshTask = Task(priority: .utility) {
             let bytes = await manager.currentCacheSize()
             guard !Task.isCancelled else { return }
             cacheBytes = bytes
