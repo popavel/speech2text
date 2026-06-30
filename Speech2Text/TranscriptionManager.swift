@@ -372,6 +372,10 @@ class TranscriptionManager {
 
         var total: Int64 = 0
         for case let url as URL in enumerator {
+            // Bail when the enclosing task was cancelled (e.g. a superseded refresh).
+            // No-op outside a cancelled task — the unit tests and the `deleteCache`
+            // path read `Task.isCancelled == false`, so the full sum is unchanged.
+            if Task.isCancelled { return total }
             guard let values = try? url.resourceValues(forKeys: keys),
                   values.isRegularFile == true else { continue }
             // totalFileAllocatedSize includes metadata/resource forks; fall back to the
@@ -395,13 +399,20 @@ class TranscriptionManager {
         }
     }
 
+    /// Off-main-actor, cancellation-aware size walk. Unlike `Task.detached`, a
+    /// `nonisolated async` function runs on the cooperative pool while staying in the
+    /// caller's structured task tree (SE-0338) — so cancelling the caller (a superseded
+    /// `refreshSize()` task) propagates into `cacheSize`'s loop and aborts the walk
+    /// instead of leaving it to run to completion. Distinct name (not an async overload
+    /// of `cacheSize`) so the call below can't re-resolve to itself and recurse.
+    private nonisolated static func cacheSizeOffActor(of directory: URL) async -> Int64 {
+        cacheSize(of: directory)
+    }
+
     /// Bytes currently occupied by the downloaded model cache. The filesystem walk runs
-    /// off the main actor.
+    /// off the main actor and is cancellable (see `cacheSizeOffActor`).
     func currentCacheSize() async -> Int64 {
-        let dir = Self.modelCacheDirectory
-        return await Task.detached(priority: .utility) {
-            Self.cacheSize(of: dir)
-        }.value
+        await Self.cacheSizeOffActor(of: Self.modelCacheDirectory)
     }
 
     /// Delete all downloaded models, returning bytes reclaimed. Refuses (returns 0) while

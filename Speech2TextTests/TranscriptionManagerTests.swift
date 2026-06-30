@@ -641,6 +641,22 @@ struct ModelCacheStorageTests {
         #expect(TranscriptionManager.cacheSize(of: ghost) == 0)
     }
 
+    @Test("cacheSize bails out early when its task is cancelled")
+    func cacheSizeRespectsCancellation() async {
+        let dir = makeTempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        write(50_000, to: dir.appendingPathComponent("a.bin"))
+
+        // A superseded refresh cancels its task; the walk must observe that and abort
+        // (rather than completing and wasting the I/O). `Task.yield()` suspends the task
+        // so the synchronous `cancel()` below is guaranteed to land before the walk runs.
+        let task = Task<Int64, Never> {
+            await Task.yield()
+            return TranscriptionManager.cacheSize(of: dir)
+        }
+        task.cancel()
+        #expect(await task.value == 0)
+    }
+
     @Test("deleteCache removes the directory and reports the bytes reclaimed")
     func deleteRemovesAndReports() {
         let dir = makeTempDir()
