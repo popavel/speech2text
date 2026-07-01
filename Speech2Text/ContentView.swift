@@ -508,7 +508,6 @@ struct SettingsView: View {
     @Environment(\.controlActiveState) private var controlActiveState
 
     @State private var cacheBytes: Int64?
-    @State private var isWorking = false
     @State private var showDeleteConfirmation = false
     @State private var refreshTask: Task<Void, Never>?
 
@@ -524,7 +523,7 @@ struct SettingsView: View {
                 Button("Delete Downloaded Models", role: .destructive) {
                     showDeleteConfirmation = true
                 }
-                .disabled(manager.isProcessing || isWorking || (cacheBytes ?? 0) == 0)
+                .disabled(manager.isProcessing || manager.isDeletingModels || (cacheBytes ?? 0) == 0)
                 .accessibilityIdentifier("deleteModelsButton")
 
                 if manager.isProcessing {
@@ -553,10 +552,14 @@ struct SettingsView: View {
         ) {
             Button("Delete", role: .destructive) {
                 Task {
-                    isWorking = true
-                    await manager.deleteAllModels()
-                    isWorking = false
-                    refreshSize()
+                    // Abort any in-flight display walk before the directory is removed, so a
+                    // GB-scale enumerator doesn't race removeItem for the same tree.
+                    refreshTask?.cancel()
+                    let removed = await manager.deleteAllModels()
+                    // A successful delete removed the directory, so its size is now 0 — set
+                    // it directly rather than re-walking a just-emptied tree. Re-measure only
+                    // when the delete was a no-op (nothing removed) to reflect the real state.
+                    if removed { cacheBytes = 0 } else { refreshSize() }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -586,9 +589,12 @@ struct SettingsView: View {
     /// `cacheSize` loop bails on `Task.isCancelled`), so a superseded pre-delete walk is
     /// aborted rather than left to finish — and its partial result is dropped here too,
     /// so it can never resolve after a post-delete walk and stale-overwrite `cacheBytes`.
+    /// Resetting `cacheBytes` to `nil` up front shows "Calculating…" while a re-measure is
+    /// in flight (e.g. on focus regain), rather than leaving a stale prior size on screen.
     /// `.utility` priority keeps the background size calc off the foreground's back.
     private func refreshSize() {
         refreshTask?.cancel()
+        cacheBytes = nil
         refreshTask = Task(priority: .utility) {
             let bytes = await manager.currentCacheSize()
             guard !Task.isCancelled else { return }
