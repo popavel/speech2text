@@ -124,7 +124,11 @@ class TranscriptionManager {
     // MARK: Internal
 
     private var whisperKit: WhisperKit?
-    private(set) var loadedModel: String?
+
+    /// The model id currently loaded into `whisperKit`, or `nil` when no engine is loaded.
+    /// Internal set so tests can simulate a loaded engine; production writes it only in
+    /// `startTranscription` (on load) and `deleteAllModels` (reset after the cache is removed).
+    var loadedModel: String?
 
     /// The loaded WhisperKit instance, exposed only as an opaque object so tests
     /// can assert the same-model fast path reuses it (instance identity) rather
@@ -378,8 +382,8 @@ class TranscriptionManager {
         var total: Int64 = 0
         for case let url as URL in enumerator {
             // Bail when the enclosing task was cancelled (e.g. a superseded refresh).
-            // No-op outside a cancelled task — the unit tests and the `deleteCache`
-            // path read `Task.isCancelled == false`, so the full sum is unchanged.
+            // No-op outside a cancelled task — the unit tests read `Task.isCancelled ==
+            // false`, so the full sum is unchanged.
             if Task.isCancelled { return total }
             guard let values = try? url.resourceValues(forKeys: keys),
                   values.isRegularFile == true else { continue }
@@ -390,17 +394,19 @@ class TranscriptionManager {
         return total
     }
 
-    /// Delete `directory` and report the bytes reclaimed (measured before removal).
-    /// Best-effort: a missing directory reclaims 0 and is not an error. `nonisolated
+    /// Remove `directory` and report whether it was actually removed: `true` when the
+    /// directory existed and `removeItem` succeeded, `false` when it was already absent or
+    /// removal failed. Best-effort — never throws. Reports removal (not bytes) so callers can
+    /// key the engine reset off "the cache is gone" rather than a byte count, which would
+    /// misfire for a removed-but-fileless tree (e.g. a partial download). `nonisolated
     /// static` for the same off-actor / testability reasons as `cacheSize(of:)`.
     @discardableResult
-    nonisolated static func deleteCache(at directory: URL) -> Int64 {
-        let size = cacheSize(of: directory)
+    nonisolated static func deleteCache(at directory: URL) -> Bool {
         do {
             try FileManager.default.removeItem(at: directory)
-            return size
+            return true
         } catch {
-            return 0
+            return false
         }
     }
 
@@ -420,31 +426,36 @@ class TranscriptionManager {
         await Self.cacheSizeOffActor(of: Self.modelCacheDirectory)
     }
 
-    /// Delete all downloaded models, returning bytes reclaimed. Refuses (returns 0) while
-    /// a transcription is in flight — deleting model files out from under a live
-    /// `transcribe(...)` would corrupt the run — or while another delete is already going.
-    /// After a successful delete the in-memory engine is dropped (`whisperKit`/`loadedModel`
-    /// reset) so the next `startTranscription()` takes the `whisperKit == nil` path and
-    /// re-downloads cleanly. `status` is deliberately left untouched: deletion is an
+    /// Delete all downloaded models, reporting whether the cache directory was actually
+    /// removed. Refuses (returns `false`) while a transcription is in flight — deleting model
+    /// files out from under a live `transcribe(...)` would corrupt the run — or while another
+    /// delete is already going. When the cache was removed the in-memory engine is dropped
+    /// (`whisperKit`/`loadedModel` reset) so the next `startTranscription()` takes the
+    /// `whisperKit == nil` path and re-downloads cleanly; a no-op delete (cache already
+    /// absent) leaves a loaded engine alone. `status` is deliberately left untouched: deletion is an
     /// orthogonal concern owned by `isDeletingModels`, which drives the display for the
     /// whole delete regardless of what `status` holds. `directory` is injectable so the
-    /// walk+removal can be unit-tested against a temp dir instead of the real cache.
+    /// removal can be unit-tested against a temp dir instead of the real cache.
     @discardableResult
-    func deleteAllModels(from directory: URL = TranscriptionManager.modelCacheDirectory) async -> Int64 {
-        guard !isProcessing, !isDeletingModels else { return 0 }
+    func deleteAllModels(from directory: URL = TranscriptionManager.modelCacheDirectory) async -> Bool {
+        guard !isProcessing, !isDeletingModels else { return false }
         // Set the busy flag *synchronously*, before the first suspension, so a transcription
         // started concurrently (also on the main actor) sees `canTranscribe == false` and
         // can't begin reading/writing the directory while it is being removed. Because the
         // flag is independent of `status`, a concurrent `clearFiles()` (→ `.idle`) can't
         // drop the guard mid-delete. Cleared once the engine has been dropped.
         isDeletingModels = true
-        let reclaimed = await Task.detached(priority: .utility) {
+        let removed = await Task.detached(priority: .utility) {
             Self.deleteCache(at: directory)
         }.value
-        whisperKit = nil
-        loadedModel = nil
+        // Only drop the in-memory engine when the cache was actually removed; a no-op delete
+        // (cache already absent) shouldn't force a needless reload/re-download.
+        if removed {
+            whisperKit = nil
+            loadedModel = nil
+        }
         isDeletingModels = false
-        return reclaimed
+        return removed
     }
 }
 

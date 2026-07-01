@@ -135,8 +135,8 @@ That folder holds the only data worth reclaiming — the downloaded models, whic
 
 ```
 ~/Library/Preferences/com.speech2text.app.plist
-~/Library/Caches/Speech2Text/
-~/Library/HTTPStorages/Speech2Text/
+~/Library/Caches/com.speech2text.app/
+~/Library/HTTPStorages/com.speech2text.app/
 ```
 
 Being non-sandboxed, Speech2Text writes nothing under `~/Library/Containers/`.

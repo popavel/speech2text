@@ -290,8 +290,8 @@ struct TranscriptionManagerTests {
         manager.status = .transcribing(progress: 0.5)
         // The guard returns before any filesystem work, so this stays hermetic — it
         // never touches the real cache directory.
-        let reclaimed = await manager.deleteAllModels()
-        #expect(reclaimed == 0)
+        let removed = await manager.deleteAllModels()
+        #expect(!removed)
         #expect(manager.status == .transcribing(progress: 0.5))
     }
 
@@ -322,8 +322,8 @@ struct TranscriptionManagerTests {
         let manager = TranscriptionManager()
         manager.isDeletingModels = true
         // Re-entrancy guard: returns before any filesystem work, so this stays hermetic.
-        let reclaimed = await manager.deleteAllModels()
-        #expect(reclaimed == 0)
+        let removed = await manager.deleteAllModels()
+        #expect(!removed)
         #expect(manager.isDeletingModels)
     }
 
@@ -386,10 +386,43 @@ struct TranscriptionManagerTests {
         manager.status = .completed
         #expect(!manager.isDeletingModels)
 
-        let reclaimed = await manager.deleteAllModels(from: dir)
-        #expect(reclaimed >= 6_000)
+        let removed = await manager.deleteAllModels(from: dir)
+        #expect(removed)
         #expect(!manager.isDeletingModels)      // toggled back off
         #expect(manager.status == .completed)   // session status untouched — no restore dance
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
+    }
+
+    @Test("deleteAllModels keeps a loaded engine when nothing was removed")
+    func deleteAllModelsKeepsEngineOnNoOp() async {
+        // A missing cache dir → nothing removed → a loaded engine must survive rather than
+        // being needlessly dropped and re-downloaded. `loadedModel` stands in for the loaded
+        // engine (hermetic: no WhisperKit/network). This guards the `if removed` branch.
+        let ghost = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let manager = TranscriptionManager()
+        manager.loadedModel = "openai_whisper-base"
+
+        let removed = await manager.deleteAllModels(from: ghost)
+        #expect(!removed)
+        #expect(manager.loadedModel == "openai_whisper-base")   // engine left alone
+    }
+
+    @Test("deleteAllModels drops the engine when a fileless cache dir is removed")
+    func deleteAllModelsDropsEngineForFilelessDir() async throws {
+        // Regression guard: the engine drop keys off actual removal, not reclaimed bytes.
+        // An existing dir with no regular-file bytes (e.g. a partial/interrupted download)
+        // is still removed, so a loaded engine — now pointing at a gone dir — must be dropped.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let manager = TranscriptionManager()
+        manager.loadedModel = "openai_whisper-base"
+
+        let removed = await manager.deleteAllModels(from: dir)
+        #expect(removed)
+        #expect(manager.loadedModel == nil)                     // engine dropped
         #expect(!FileManager.default.fileExists(atPath: dir.path))
     }
 
@@ -725,19 +758,18 @@ struct ModelCacheStorageTests {
         #expect(await task.value == 0)
     }
 
-    @Test("deleteCache removes the directory and reports the bytes reclaimed")
+    @Test("deleteCache removes the directory and reports success")
     func deleteRemovesAndReports() {
         let dir = makeTempDir()
         write(6_000, to: dir.appendingPathComponent("model.bin"))
-        let reclaimed = TranscriptionManager.deleteCache(at: dir)
-        #expect(reclaimed >= 6_000)
+        #expect(TranscriptionManager.deleteCache(at: dir))
         #expect(!FileManager.default.fileExists(atPath: dir.path))
     }
 
-    @Test("deleteCache on a missing directory reclaims zero and does not throw")
-    func deleteMissingIsZero() {
+    @Test("deleteCache on a missing directory reports false and does not throw")
+    func deleteMissingIsFalse() {
         let ghost = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        #expect(TranscriptionManager.deleteCache(at: ghost) == 0)
+        #expect(!TranscriptionManager.deleteCache(at: ghost))
         #expect(!FileManager.default.fileExists(atPath: ghost.path))
     }
 
