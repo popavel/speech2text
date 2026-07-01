@@ -299,7 +299,7 @@ struct TranscriptionManagerTests {
     func cannotTranscribeWhileDeletingModels() {
         let manager = TranscriptionManager()
         manager.addFiles([URL(fileURLWithPath: "/tmp/clip.mp3")])
-        manager.status = .deletingModels
+        manager.isDeletingModels = true
         // The deletion busy-state must gate the main window's Transcribe button so a
         // transcription can't start mid-delete and race the cache removal.
         #expect(!manager.canTranscribe)
@@ -309,20 +309,88 @@ struct TranscriptionManagerTests {
     func startTranscriptionIsNoOpWhileDeletingModels() async {
         let manager = TranscriptionManager()
         manager.addFiles([URL(fileURLWithPath: "/tmp/clip.mp3")])
-        manager.status = .deletingModels
+        manager.isDeletingModels = true
         // Guard returns before any WhisperKit/network work, so this stays hermetic.
         await manager.startTranscription()
-        #expect(manager.status == .deletingModels)
+        // Never advanced to .loadingModel, and the delete flag still holds.
+        #expect(manager.status == .idle)
+        #expect(manager.isDeletingModels)
     }
 
     @Test("deleteAllModels refuses while another deletion is already in progress")
     func deleteAllModelsRefusesWhileAlreadyDeleting() async {
         let manager = TranscriptionManager()
-        manager.status = .deletingModels
+        manager.isDeletingModels = true
         // Re-entrancy guard: returns before any filesystem work, so this stays hermetic.
         let reclaimed = await manager.deleteAllModels()
         #expect(reclaimed == 0)
-        #expect(manager.status == .deletingModels)
+        #expect(manager.isDeletingModels)
+    }
+
+    @Test("statusMessage shows the delete message whenever a delete is in flight")
+    func statusMessageReflectsDeletingFlag() {
+        let manager = TranscriptionManager()
+        manager.status = .completed   // an orthogonal session status the delete sits on top of
+        manager.isDeletingModels = true
+        #expect(manager.statusMessage == "Deleting downloaded models...")
+    }
+
+    @Test("A model delete leaves the file queue usable but still blocks transcribing")
+    func deleteDoesNotLockQueueButBlocksTranscribe() async throws {
+        // Real, hermetic delete against a populated temp directory (never the real cache).
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 6_000).write(to: dir.appendingPathComponent("model.bin"))
+
+        let manager = TranscriptionManager()
+        manager.addFiles([URL(fileURLWithPath: "/tmp/clip.mp3")])
+
+        // Kick the delete off; it sets the flag synchronously then suspends on the detached
+        // removal. Spin (bounded) until we observe the in-flight state — deterministic
+        // because the flag is set before the first await.
+        let handle = Task { await manager.deleteAllModels(from: dir) }
+        var spins = 0
+        while !manager.isDeletingModels && spins < 1000 {
+            await Task.yield()
+            spins += 1
+        }
+        #expect(manager.isDeletingModels)
+
+        // The main actor is ours until the next await, so the delete can't clear the flag
+        // under us. Mid-delete the queue is still freely mutable (decoupled) …
+        manager.clearFiles()
+        #expect(manager.droppedFileURLs.isEmpty)
+        manager.addFiles([URL(fileURLWithPath: "/tmp/other.mp3")])
+        // … but even though clearFiles() reset status to .idle, the guard holds, so a
+        // transcription cannot start and race the cache removal. This is the regression.
+        #expect(manager.status == .idle)
+        #expect(manager.isDeletingModels)
+        #expect(!manager.canTranscribe)
+
+        _ = await handle.value
+        // After the delete: flag cleared, cache gone, the user's clear intent stands.
+        #expect(!manager.isDeletingModels)
+        #expect(manager.status == .idle)
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
+    }
+
+    @Test("deleteAllModels toggles the flag and leaves status untouched")
+    func deleteAllModelsFlagLifecycle() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 6_000).write(to: dir.appendingPathComponent("model.bin"))
+
+        let manager = TranscriptionManager()
+        manager.status = .completed
+        #expect(!manager.isDeletingModels)
+
+        let reclaimed = await manager.deleteAllModels(from: dir)
+        #expect(reclaimed >= 6_000)
+        #expect(!manager.isDeletingModels)      // toggled back off
+        #expect(manager.status == .completed)   // session status untouched — no restore dance
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
     }
 
     @Test("Treats extensions case-insensitively")

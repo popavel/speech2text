@@ -80,7 +80,6 @@ enum TranscriptionStatus: Equatable {
     case transcribing(progress: Double)
     case completed
     case error(String)
-    case deletingModels
 }
 
 // MARK: - Errors
@@ -141,16 +140,23 @@ class TranscriptionManager {
         }
     }
 
-    /// Whether a model-cache deletion is in flight. Kept separate from `isProcessing`
-    /// (which means "a transcription is running") so the SettingsView caption can stay
-    /// transcription-specific while `canTranscribe` still blocks during a delete.
-    var isDeletingModels: Bool { status == .deletingModels }
+    /// Whether a model-cache deletion is in flight. The single source of truth for the
+    /// deletion busy-state — it drives both `canTranscribe` and the "Deleting…" display.
+    /// Deliberately **not** derived from `status`: "a transcription result" and "the cache
+    /// is being deleted" are orthogonal, and piggybacking on `status` let any status write
+    /// (e.g. `clearFiles()` → `.idle`) silently drop the guard mid-delete. Internal set so
+    /// tests can simulate the in-flight state; production mutates it only in `deleteAllModels`.
+    var isDeletingModels = false
 
     var canTranscribe: Bool {
         !droppedFileURLs.isEmpty && !isProcessing && !isDeletingModels
     }
 
     var statusMessage: String {
+        // A delete overrides the session status in the display: it can run on top of any
+        // status (e.g. a `.completed` result), and `status` is intentionally left untouched
+        // during the delete, so the flag — not the enum — owns the "Deleting…" message.
+        if isDeletingModels { return "Deleting downloaded models..." }
         switch status {
         case .idle: return ""
         case .loadingModel: return "Downloading and loading model (first time may take a while)..."
@@ -160,7 +166,6 @@ class TranscriptionManager {
                 : "Transcribing..."
         case .completed: return "Transcription complete"
         case .error(let msg): return "Error: \(msg)"
-        case .deletingModels: return "Deleting downloaded models..."
         }
     }
 
@@ -417,29 +422,28 @@ class TranscriptionManager {
 
     /// Delete all downloaded models, returning bytes reclaimed. Refuses (returns 0) while
     /// a transcription is in flight — deleting model files out from under a live
-    /// `transcribe(...)` would corrupt the run. After a successful delete the in-memory
-    /// engine is dropped (`whisperKit`/`loadedModel` reset) so the next
-    /// `startTranscription()` takes the `whisperKit == nil` path and re-downloads cleanly.
+    /// `transcribe(...)` would corrupt the run — or while another delete is already going.
+    /// After a successful delete the in-memory engine is dropped (`whisperKit`/`loadedModel`
+    /// reset) so the next `startTranscription()` takes the `whisperKit == nil` path and
+    /// re-downloads cleanly. `status` is deliberately left untouched: deletion is an
+    /// orthogonal concern owned by `isDeletingModels`, which drives the display for the
+    /// whole delete regardless of what `status` holds. `directory` is injectable so the
+    /// walk+removal can be unit-tested against a temp dir instead of the real cache.
     @discardableResult
-    func deleteAllModels() async -> Int64 {
+    func deleteAllModels(from directory: URL = TranscriptionManager.modelCacheDirectory) async -> Int64 {
         guard !isProcessing, !isDeletingModels else { return 0 }
-        // Publish the busy state *synchronously*, before the first suspension, so a
-        // transcription started concurrently (also on the main actor) sees
-        // `canTranscribe == false` and can't begin reading/writing the directory while
-        // it is being removed. Restored once the engine has been dropped.
-        let previousStatus = status
-        status = .deletingModels
-        let dir = Self.modelCacheDirectory
+        // Set the busy flag *synchronously*, before the first suspension, so a transcription
+        // started concurrently (also on the main actor) sees `canTranscribe == false` and
+        // can't begin reading/writing the directory while it is being removed. Because the
+        // flag is independent of `status`, a concurrent `clearFiles()` (→ `.idle`) can't
+        // drop the guard mid-delete. Cleared once the engine has been dropped.
+        isDeletingModels = true
         let reclaimed = await Task.detached(priority: .utility) {
-            Self.deleteCache(at: dir)
+            Self.deleteCache(at: directory)
         }.value
         whisperKit = nil
         loadedModel = nil
-        // Only restore if nothing else changed the status during the await (e.g. the user
-        // hit Clear, which sets `.idle`) — that intent should win over our restore.
-        if status == .deletingModels {
-            status = previousStatus
-        }
+        isDeletingModels = false
         return reclaimed
     }
 }

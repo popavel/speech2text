@@ -224,18 +224,25 @@ struct ContentView: View {
     private var statusRow: some View {
         HStack(spacing: 6) {
             Group {
-                switch manager.status {
-                case .error:
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                case .completed:
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                case .loadingModel, .transcribing, .deletingModels:
+                // A delete owns the display via the flag (see `statusMessage`), on top of
+                // whatever `status` holds — so check it before switching on `status`.
+                if manager.isDeletingModels {
                     Image(systemName: "circle.dotted")
                         .foregroundStyle(.blue)
-                default:
-                    EmptyView()
+                } else {
+                    switch manager.status {
+                    case .error:
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                    case .completed:
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    case .loadingModel, .transcribing:
+                        Image(systemName: "circle.dotted")
+                            .foregroundStyle(.blue)
+                    default:
+                        EmptyView()
+                    }
                 }
             }
 
@@ -315,6 +322,9 @@ struct ContentView: View {
     // MARK: - Helpers
 
     private var statusColor: Color {
+        // Neutral while deleting, even if the underlying `status` is `.completed`/`.error`,
+        // so "Deleting…" doesn't render in green/red.
+        if manager.isDeletingModels { return .secondary }
         switch manager.status {
         case .error: return .red
         case .completed: return .green
