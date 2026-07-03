@@ -410,20 +410,13 @@ class TranscriptionManager {
         }
     }
 
-    /// Off-main-actor, cancellation-aware size walk. Unlike `Task.detached`, a
-    /// `nonisolated async` function runs on the cooperative pool while staying in the
-    /// caller's structured task tree (SE-0338) — so cancelling the caller (a superseded
-    /// `refreshSize()` task) propagates into `cacheSize`'s loop and aborts the walk
-    /// instead of leaving it to run to completion. Distinct name (not an async overload
-    /// of `cacheSize`) so the call below can't re-resolve to itself and recurse.
-    private nonisolated static func cacheSizeOffActor(of directory: URL) async -> Int64 {
-        cacheSize(of: directory)
-    }
-
-    /// Bytes currently occupied by the downloaded model cache. The filesystem walk runs
-    /// off the main actor and is cancellable (see `cacheSizeOffActor`).
-    func currentCacheSize() async -> Int64 {
-        await Self.cacheSizeOffActor(of: Self.modelCacheDirectory)
+    /// Bytes currently occupied by the downloaded model cache. `nonisolated` so the
+    /// synchronous `cacheSize` walk runs off the @MainActor: under SE-0338 a nonisolated
+    /// async member executes on the cooperative pool, not the caller's actor. It stays in
+    /// the caller's structured task tree, so a superseded refresh cancelling its task
+    /// propagates into `cacheSize`'s `Task.isCancelled` loop and aborts the walk.
+    nonisolated func currentCacheSize() async -> Int64 {
+        Self.cacheSize(of: Self.modelCacheDirectory)
     }
 
     /// Delete all downloaded models, reporting whether the cache directory was actually
@@ -445,6 +438,11 @@ class TranscriptionManager {
         // flag is independent of `status`, a concurrent `clearFiles()` (→ `.idle`) can't
         // drop the guard mid-delete. Cleared once the engine has been dropped.
         isDeletingModels = true
+        // Offload the blocking `removeItem` off the @MainActor. Unlike the size walk
+        // (`currentCacheSize`, a structured nonisolated hop a superseded refresh can cancel),
+        // a destructive delete must run to completion — a half-removed cache is worse than a
+        // finished one — so it uses `Task.detached`, deliberately decoupled from caller
+        // cancellation. (`removeItem` isn't cancellation-aware anyway.)
         let removed = await Task.detached(priority: .utility) {
             Self.deleteCache(at: directory)
         }.value

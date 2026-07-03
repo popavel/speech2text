@@ -523,7 +523,7 @@ struct SettingsView: View {
                 Button("Delete Downloaded Models", role: .destructive) {
                     showDeleteConfirmation = true
                 }
-                .disabled(manager.isProcessing || manager.isDeletingModels || (cacheBytes ?? 0) == 0)
+                .disabled(manager.isProcessing || manager.isDeletingModels || !hasCache)
                 .accessibilityIdentifier("deleteModelsButton")
 
                 if manager.isProcessing {
@@ -552,8 +552,10 @@ struct SettingsView: View {
         ) {
             Button("Delete", role: .destructive) {
                 Task {
-                    // Abort any in-flight display walk before the directory is removed, so a
-                    // GB-scale enumerator doesn't race removeItem for the same tree.
+                    // Cancel any in-flight display walk before the directory is removed, so a
+                    // GB-scale enumerator doesn't race removeItem for the same tree. A walk
+                    // can't *start* mid-delete: refreshSize() bails while isDeletingModels is
+                    // set (from before deleteAllModels' first suspension until it returns).
                     refreshTask?.cancel()
                     let removed = await manager.deleteAllModels()
                     // A successful delete removed the directory, so its size is now 0 — set
@@ -568,15 +570,29 @@ struct SettingsView: View {
         }
     }
 
+    /// Whether a measured, non-empty cache exists — the plain-Int predicate the delete
+    /// button gates on, kept separate from the display string so enablement doesn't hinge
+    /// on formatting.
+    private var hasCache: Bool { (cacheBytes ?? 0) > 0 }
+
+    /// The formatted cache size when `hasCache`, else `nil` (still calculating, or empty).
+    /// Single source of truth for the size *string*, shared by the size label and the
+    /// confirmation copy so they don't each re-derive it from the optional `cacheBytes`.
+    private var formattedCacheSize: String? {
+        guard hasCache, let cacheBytes else { return nil }
+        return Self.formatted(cacheBytes)
+    }
+
     private var cacheSizeText: String {
-        guard let cacheBytes else { return "Calculating…" }
-        return cacheBytes > 0 ? Self.formatted(cacheBytes) : "None"
+        if let formattedCacheSize { return formattedCacheSize }
+        return cacheBytes == nil ? "Calculating…" : "None"
     }
 
     private var confirmationMessage: String {
-        // The Delete button is disabled when the cache is empty, so the dialog only ever
-        // presents with cacheBytes > 0; the `?? ""` is an unreachable safety fallback.
-        let freedPrefix = cacheBytes.map { "This frees \(Self.formatted($0)). " } ?? ""
+        // The Delete button is disabled unless a positive, measured cache exists, so the
+        // dialog only ever presents with a non-nil `formattedCacheSize`; the `?? ""` is an
+        // unreachable safety fallback.
+        let freedPrefix = formattedCacheSize.map { "This frees \($0). " } ?? ""
         return "\(freedPrefix)Models will re-download the next time you transcribe."
     }
 
@@ -585,14 +601,20 @@ struct SettingsView: View {
     }
 
     /// Recompute the cache size off the main actor. Serialized: a new call cancels the
-    /// previous task, and cancellation now propagates into the walk itself (the
-    /// `cacheSize` loop bails on `Task.isCancelled`), so a superseded pre-delete walk is
-    /// aborted rather than left to finish — and its partial result is dropped here too,
-    /// so it can never resolve after a post-delete walk and stale-overwrite `cacheBytes`.
+    /// previous task, and cancellation propagates into the walk itself (the `cacheSize`
+    /// loop bails on `Task.isCancelled`), so a superseded walk is aborted and its partial
+    /// result dropped by the `guard !Task.isCancelled` below.
+    ///
+    /// Bails while a delete is in flight: a walk begun against a tree being removed could
+    /// read a partial size and land after the delete publishes `0`. `deleteAllModels` sets
+    /// `isDeletingModels` synchronously before its first suspension and clears it only after,
+    /// so this guard covers the whole delete — no walk can start mid-delete.
+    ///
     /// Resetting `cacheBytes` to `nil` up front shows "Calculating…" while a re-measure is
     /// in flight (e.g. on focus regain), rather than leaving a stale prior size on screen.
     /// `.utility` priority keeps the background size calc off the foreground's back.
     private func refreshSize() {
+        guard !manager.isDeletingModels else { return }
         refreshTask?.cancel()
         cacheBytes = nil
         refreshTask = Task(priority: .utility) {
