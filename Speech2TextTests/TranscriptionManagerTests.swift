@@ -285,14 +285,26 @@ struct TranscriptionManagerTests {
     // MARK: deleteAllModels
 
     @Test("deleteAllModels refuses while a transcription is in progress")
-    func deleteAllModelsRefusesWhileProcessing() async {
+    func deleteAllModelsRefusesWhileProcessing() async throws {
+        // Inject a populated temp dir (never the real cache): the guard must refuse
+        // before any filesystem work, so the dir survives untouched. Injecting it also
+        // makes this a real regression guard — drop `!isProcessing` from the guard and
+        // the delete would remove the dir, flipping `removed` to true and failing
+        // `#expect(!removed)`. Passing the default arg would target the real user cache
+        // and pass regardless (a no-op delete on CI never mutates status).
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 6_000).write(to: dir.appendingPathComponent("model.bin"))
+        defer { try? FileManager.default.removeItem(at: dir) }
+
         let manager = TranscriptionManager()
         manager.status = .transcribing(progress: 0.5)
-        // The guard returns before any filesystem work, so this stays hermetic — it
-        // never touches the real cache directory.
-        let removed = await manager.deleteAllModels()
+
+        let removed = await manager.deleteAllModels(from: dir)
         #expect(!removed)
         #expect(manager.status == .transcribing(progress: 0.5))
+        #expect(FileManager.default.fileExists(atPath: dir.path))   // guard fired → dir intact
     }
 
     @Test("Cannot start transcription while a model deletion is in progress")

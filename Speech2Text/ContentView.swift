@@ -514,6 +514,9 @@ struct SettingsView: View {
     /// `.onChange(controlActiveState)` double-fire on first open (and rapid refocus)
     /// into a single walk. Cleared by the walk itself and by the delete path.
     @State private var isMeasuring = false
+    /// Bumped on each measure so a superseded walk can tell it is no longer the
+    /// current one and must not touch the shared `isMeasuring`/`cacheBytes` state.
+    @State private var measureGeneration = 0
 
     var body: some View {
         Form {
@@ -625,13 +628,23 @@ struct SettingsView: View {
     /// (showing "Calculating…"), while a refresh that already has a value keeps the prior
     /// figure on screen until the new one lands — no "Calculating…" flash on every refocus.
     /// `.utility` priority keeps the background size calc off the foreground's back.
+    ///
+    /// Ownership via `measureGeneration`: each walk captures the generation it was launched
+    /// under and only mutates the shared `isMeasuring`/`cacheBytes` while it is still the
+    /// current walk. A superseded walk — a newer `refreshSize()` has since run, or the delete
+    /// path cancelled this one and spawned a fresh walk — bails without clearing `isMeasuring`
+    /// (which now belongs to that newer walk) or overwriting `cacheBytes`. Without this a
+    /// late-resuming cancelled walk could clear the coalescing flag mid-walk, letting a later
+    /// refocus spawn a second concurrent, untracked walk.
     private func refreshSize() {
         guard !manager.isDeletingModels, !isMeasuring else { return }
         isMeasuring = true
+        measureGeneration += 1
+        let generation = measureGeneration
         refreshTask = Task(priority: .utility) {
             let bytes = await manager.currentCacheSize()
-            // Clear the in-flight flag before the cancellation guard so a superseded or
-            // delete-cancelled walk still frees the next measure.
+            // Only the current walk owns the shared flag/value; a superseded walk stops here.
+            guard generation == measureGeneration else { return }
             isMeasuring = false
             guard !Task.isCancelled else { return }
             cacheBytes = bytes
