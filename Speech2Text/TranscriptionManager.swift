@@ -394,12 +394,13 @@ class TranscriptionManager {
         return total
     }
 
-    /// Remove `directory` and report whether it was actually removed: `true` when the
-    /// directory existed and `removeItem` succeeded, `false` when it was already absent or
-    /// removal failed. Best-effort — never throws. Reports removal (not bytes) so callers can
-    /// key the engine reset off "the cache is gone" rather than a byte count, which would
-    /// misfire for a removed-but-fileless tree (e.g. a partial download). `nonisolated
-    /// static` for the same off-actor / testability reasons as `cacheSize(of:)`.
+    /// Remove `directory` and report whether it was *fully* removed: `true` when the directory
+    /// existed and `removeItem` succeeded outright, `false` when it was already absent or removal
+    /// failed. Best-effort — never throws. This boolean cannot distinguish "nothing was there" from
+    /// "children were unlinked but the final node removal failed" (`removeItem` recurses depth-first,
+    /// so a late failure can leave weight files already gone yet return `false`); callers that need
+    /// to know whether the tree was *touched* must check existence separately rather than relying on
+    /// this. `nonisolated static` for the same off-actor / testability reasons as `cacheSize(of:)`.
     @discardableResult
     nonisolated static func deleteCache(at directory: URL) -> Bool {
         do {
@@ -419,13 +420,15 @@ class TranscriptionManager {
         Self.cacheSize(of: Self.modelCacheDirectory)
     }
 
-    /// Delete all downloaded models, reporting whether the cache directory was actually
-    /// removed. Refuses (returns `false`) while a transcription is in flight — deleting model
+    /// Delete all downloaded models, reporting whether the cache directory was *fully* removed.
+    /// Refuses (returns `false`) while a transcription is in flight — deleting model
     /// files out from under a live `transcribe(...)` would corrupt the run — or while another
-    /// delete is already going. When the cache was removed the in-memory engine is dropped
-    /// (`whisperKit`/`loadedModel` reset) so the next `startTranscription()` takes the
-    /// `whisperKit == nil` path and re-downloads cleanly; a no-op delete (cache already
-    /// absent) leaves a loaded engine alone. `status` is deliberately left untouched: deletion is an
+    /// delete is already going. The in-memory engine is dropped (`whisperKit`/`loadedModel` reset)
+    /// whenever the cache **existed** before the attempt — not only on full success — because a
+    /// partial removal (children unlinked but final node removal failed) can still have deleted the
+    /// weight files, leaving a loaded engine pointing at missing files; keeping it would let the next
+    /// `startTranscription()` take the "already loaded" fast path against a gutted cache. Only a
+    /// genuine no-op delete (cache already absent) leaves a loaded engine alone. `status` is deliberately left untouched: deletion is an
     /// orthogonal concern owned by `isDeletingModels`, which drives the display for the
     /// whole delete regardless of what `status` holds. `directory` is injectable so the
     /// removal can be unit-tested against a temp dir instead of the real cache.
@@ -443,17 +446,22 @@ class TranscriptionManager {
         // a destructive delete must run to completion — a half-removed cache is worse than a
         // finished one — so it uses `Task.detached`, deliberately decoupled from caller
         // cancellation. (`removeItem` isn't cancellation-aware anyway.)
-        let removed = await Task.detached(priority: .utility) {
-            Self.deleteCache(at: directory)
+        // Capture existence and remove in the same detached hop, so both stay off the @MainActor.
+        let result = await Task.detached(priority: .utility) { () -> (existed: Bool, removed: Bool) in
+            let existed = FileManager.default.fileExists(atPath: directory.path)
+            return (existed, Self.deleteCache(at: directory))
         }.value
-        // Only drop the in-memory engine when the cache was actually removed; a no-op delete
-        // (cache already absent) shouldn't force a needless reload/re-download.
-        if removed {
+        // Drop the in-memory engine whenever the cache existed before the attempt — even a partial
+        // removal may have unlinked the weight files, so a loaded engine is now stale. Only a true
+        // no-op delete (cache already absent) leaves it alone to avoid a needless reload/re-download.
+        if result.existed {
             whisperKit = nil
             loadedModel = nil
         }
         isDeletingModels = false
-        return removed
+        // Report *full* removal: on a partial failure the caller (Settings) re-walks and surfaces
+        // the residual leftover bytes rather than publishing 0.
+        return result.removed
     }
 }
 

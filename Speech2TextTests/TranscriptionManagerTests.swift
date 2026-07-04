@@ -438,6 +438,37 @@ struct TranscriptionManagerTests {
         #expect(!FileManager.default.fileExists(atPath: dir.path))
     }
 
+    @Test("deleteAllModels drops the engine on a PARTIAL removal (weights gone, dir remains)")
+    func deleteAllModelsDropsEngineOnPartialRemoval() async throws {
+        // The regression: `removeItem` recurses depth-first, so it can unlink the weight files
+        // yet still throw on the final node removal — returning `removed == false` while the
+        // cache is effectively gutted. Keying the engine drop off *existence before* the attempt
+        // (not off full removal) is what fixes it. Reproduced deterministically by making the
+        // cache dir's PARENT read-only: the child `model.bin` (writable dir) still gets unlinked,
+        // but the final `rmdir` of the dir itself needs write on the parent and fails.
+        try #require(getuid() != 0)   // root bypasses perms → removal would fully succeed; skip.
+
+        let parent = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let dir = parent.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 6_000).write(to: dir.appendingPathComponent("model.bin"))
+        // Restore write perm before cleanup so the temp tree can be torn down.
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: parent.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: parent.path)
+            try? FileManager.default.removeItem(at: parent)
+        }
+
+        let manager = TranscriptionManager()
+        manager.loadedModel = "openai_whisper-base"
+
+        let removed = await manager.deleteAllModels(from: dir)
+        #expect(!removed)                                                     // final rmdir failed
+        #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("model.bin").path))  // weights unlinked
+        #expect(manager.loadedModel == nil)                                   // engine dropped anyway — the fix
+    }
+
     @Test("Treats extensions case-insensitively")
     func extensionsAreCaseInsensitive() {
         let manager = TranscriptionManager()
