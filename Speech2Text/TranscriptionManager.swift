@@ -50,6 +50,19 @@ struct TranscriptionLanguage: Identifiable, Hashable, Sendable {
     }
 }
 
+// MARK: - Task
+
+extension DecodingTask {
+    /// User-facing label for the transcribe/translate picker. `.translate` always produces
+    /// English output, so the label says so explicitly.
+    var displayName: String {
+        switch self {
+        case .transcribe: return "Transcribe"
+        case .translate: return "Translate to English"
+        }
+    }
+}
+
 // MARK: - Model
 
 enum WhisperModel: String, CaseIterable, Identifiable {
@@ -112,6 +125,15 @@ class TranscriptionManager {
     var droppedFileURLs: [URL] = []
     var selectedLanguage: TranscriptionLanguage = .auto
     var selectedModel: WhisperModel = .base
+    /// Transcribe (keep source language) vs translate-to-English. Projected straight onto
+    /// `DecodingOptions.task`; `.translate` always targets English regardless of `selectedLanguage`
+    /// (which names the *source*). Uses WhisperKit's own `CaseIterable` enum so the picker is a
+    /// zero-maintenance mirror, like `TranscriptionLanguage`.
+    var selectedTask: DecodingTask = .transcribe
+    /// Decoding temperature. `0.0` = greedy/most accurate; higher adds randomness. Exposed behind
+    /// the UI's Advanced disclosure — for transcription 0 is almost always best, and WhisperKit's
+    /// real use of temperature is the internal fallback ladder on failed segments.
+    var temperature: Float = 0.0
     var status: TranscriptionStatus = .idle
     var transcriptionResult: String = ""
 
@@ -266,10 +288,7 @@ class TranscriptionManager {
             for (index, url) in droppedFileURLs.enumerated() {
                 let audioURL = try await prepareAudio(from: url)
 
-                var options = DecodingOptions()
-                if selectedLanguage != .auto {
-                    options.language = selectedLanguage.code
-                }
+                let options = makeDecodingOptions()
 
                 let results = try await kit.transcribe(
                     audioPath: audioURL.path,
@@ -296,6 +315,22 @@ class TranscriptionManager {
         } catch {
             status = .error(error.localizedDescription)
         }
+    }
+
+    /// Build the `DecodingOptions` for a run from the current user selections. Extracted from
+    /// `startTranscription` so the state→options mapping is unit-testable without loading a model
+    /// or hitting the network. `chunkingStrategy = .vad` is a fixed default (not a user toggle):
+    /// VAD splitting improves accuracy and parallelism on long audio. `language` is left `nil`
+    /// (WhisperKit auto-detects) unless a specific language is chosen.
+    func makeDecodingOptions() -> DecodingOptions {
+        var options = DecodingOptions()
+        options.task = selectedTask
+        options.temperature = temperature
+        options.chunkingStrategy = .vad
+        if selectedLanguage != .auto {
+            options.language = selectedLanguage.code
+        }
+        return options
     }
 
     // MARK: Audio Preparation
