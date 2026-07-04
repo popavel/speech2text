@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+@preconcurrency import WhisperKit
 
 struct ContentView: View {
     /// The app-owned shared `TranscriptionManager`, injected (not owned) by this view.
@@ -28,6 +29,8 @@ struct ContentView: View {
             }
 
             controlsRow
+
+            advancedSection
 
             transcribeButton
 
@@ -188,8 +191,47 @@ struct ContentView: View {
                 .accessibilityIdentifier("modelPicker")
             }
 
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Task")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Picker("", selection: $manager.selectedTask) {
+                    ForEach(DecodingTask.allCases, id: \.self) { task in
+                        Text(task.displayName).tag(task)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 180)
+                .accessibilityIdentifier("taskPicker")
+            }
+
             Spacer()
         }
+    }
+
+    // MARK: - Advanced
+
+    private var advancedSection: some View {
+        DisclosureGroup("Advanced") {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Temperature")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(String(format: "%.1f", manager.temperature))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $manager.temperature, in: 0...1, step: 0.1)
+                    .accessibilityIdentifier("temperatureSlider")
+                Text("0 = most accurate; higher adds randomness.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 4)
+        }
+        .accessibilityIdentifier("advancedDisclosure")
     }
 
     // MARK: - Transcribe Button

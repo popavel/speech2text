@@ -20,6 +20,7 @@
 		9842F6E9AB5C932CECD3DC99 /* Speech2TextApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0550083328F5CD9C15E2E33D /* Speech2TextApp.swift */; };
 		9F0EF0DDF19E50E9959B1FA6 /* AudioFormatDecodabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06274BF2E732BF1629B0A4CF /* AudioFormatDecodabilityTests.swift */; };
 		A3F273342E6E6EF2526082E1 /* TranscriptionPipelineIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CBA8B99A25889C574665D9 /* TranscriptionPipelineIntegrationTests.swift */; };
+		C296B22884C3C2464DF92C44 /* DecodingParametersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E84E2174D83A011D947F5920 /* DecodingParametersTests.swift */; };
 		C54A594EB348E23685BFDDD8 /* ViewInspector in Frameworks */ = {isa = PBXBuildFile; productRef = 997B7883B0EAB1415BF30DC3 /* ViewInspector */; };
 		C7951CBF981C5F6CA2D7A569 /* Speech2TextUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F92F7F9BC61D6125C150C18 /* Speech2TextUITests.swift */; };
 		CA01503AA66EAF3D136876CA /* ContentViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 420FFF7A6196DB12A7DF261F /* ContentViewTests.swift */; };
@@ -68,6 +69,7 @@
 		B3BD5F2DD613FB74ED192E9E /* TranscriptionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionManagerTests.swift; sourceTree = "<group>"; };
 		C400EB794A0666C23BA973D9 /* AudioExtractionIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioExtractionIntegrationTests.swift; sourceTree = "<group>"; };
 		DEBD1E9C7CDCE059D602F705 /* Speech2TextIntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Speech2TextIntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E84E2174D83A011D947F5920 /* DecodingParametersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodingParametersTests.swift; sourceTree = "<group>"; };
 		F6A7DFD12EDE8C2B45A474B1 /* tone.ogg */ = {isa = PBXFileReference; path = tone.ogg; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -133,6 +135,7 @@
 			isa = PBXGroup;
 			children = (
 				420FFF7A6196DB12A7DF261F /* ContentViewTests.swift */,
+				E84E2174D83A011D947F5920 /* DecodingParametersTests.swift */,
 				B3BD5F2DD613FB74ED192E9E /* TranscriptionManagerTests.swift */,
 			);
 			path = Speech2TextTests;
@@ -318,6 +321,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CA01503AA66EAF3D136876CA /* ContentViewTests.swift in Sources */,
+				C296B22884C3C2464DF92C44 /* DecodingParametersTests.swift in Sources */,
 				03C59C0DF2A8D77A52EB517E /* TranscriptionLanguage+Fixtures.swift in Sources */,
 				6588BBA074EF1F9318039BFE /* TranscriptionManagerTests.swift in Sources */,
 			);
