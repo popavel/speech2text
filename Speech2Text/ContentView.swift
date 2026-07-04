@@ -510,6 +510,10 @@ struct SettingsView: View {
     @State private var cacheBytes: Int64?
     @State private var showDeleteConfirmation = false
     @State private var refreshTask: Task<Void, Never>?
+    /// Whether a size walk is currently in flight. Coalesces the `.task` +
+    /// `.onChange(controlActiveState)` double-fire on first open (and rapid refocus)
+    /// into a single walk. Cleared by the walk itself and by the delete path.
+    @State private var isMeasuring = false
 
     var body: some View {
         Form {
@@ -557,6 +561,10 @@ struct SettingsView: View {
                     // can't *start* mid-delete: refreshSize() bails while isDeletingModels is
                     // set (from before deleteAllModels' first suspension until it returns).
                     refreshTask?.cancel()
+                    // The cancelled walk's own `isMeasuring = false` may not have landed
+                    // yet; clear it here so the no-op branch's `refreshSize()` below isn't
+                    // blocked by the coalescing guard.
+                    isMeasuring = false
                     let removed = await manager.deleteAllModels()
                     // A successful delete removed the directory, so its size is now 0 — set
                     // it directly rather than re-walking a just-emptied tree. Re-measure only
@@ -600,25 +608,31 @@ struct SettingsView: View {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
-    /// Recompute the cache size off the main actor. Serialized: a new call cancels the
-    /// previous task, and cancellation propagates into the walk itself (the `cacheSize`
-    /// loop bails on `Task.isCancelled`), so a superseded walk is aborted and its partial
-    /// result dropped by the `guard !Task.isCancelled` below.
+    /// Recompute the cache size off the main actor.
+    ///
+    /// Coalesced via `isMeasuring`: a call while a walk is already running is a no-op, so the
+    /// `.task` + `.onChange(controlActiveState)` double-fire on first open (and rapid refocus)
+    /// collapses to a single walk. A genuine refocus after this one finishes still re-measures,
+    /// because the flag is clear by then. The delete path clears `isMeasuring` where it cancels
+    /// the walk, so its post-delete re-measure isn't blocked.
     ///
     /// Bails while a delete is in flight: a walk begun against a tree being removed could
     /// read a partial size and land after the delete publishes `0`. `deleteAllModels` sets
     /// `isDeletingModels` synchronously before its first suspension and clears it only after,
     /// so this guard covers the whole delete — no walk can start mid-delete.
     ///
-    /// Resetting `cacheBytes` to `nil` up front shows "Calculating…" while a re-measure is
-    /// in flight (e.g. on focus regain), rather than leaving a stale prior size on screen.
+    /// Deliberately does NOT blank `cacheBytes`: the first measure already starts from `nil`
+    /// (showing "Calculating…"), while a refresh that already has a value keeps the prior
+    /// figure on screen until the new one lands — no "Calculating…" flash on every refocus.
     /// `.utility` priority keeps the background size calc off the foreground's back.
     private func refreshSize() {
-        guard !manager.isDeletingModels else { return }
-        refreshTask?.cancel()
-        cacheBytes = nil
+        guard !manager.isDeletingModels, !isMeasuring else { return }
+        isMeasuring = true
         refreshTask = Task(priority: .utility) {
             let bytes = await manager.currentCacheSize()
+            // Clear the in-flight flag before the cancellation guard so a superseded or
+            // delete-cancelled walk still frees the next measure.
+            isMeasuring = false
             guard !Task.isCancelled else { return }
             cacheBytes = bytes
         }

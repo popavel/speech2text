@@ -19,7 +19,12 @@ struct Speech2TextApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        // Single-instance `Window` (not `WindowGroup`): the app owns one shared
+        // `manager`, so a second main window would mirror all state (files, progress,
+        // result) between windows. `Window` is inherently single and drops the
+        // File → New Window / New Tab commands, keeping one main window that shares
+        // the engine with the Settings scene.
+        Window("Speech2Text", id: "main") {
             ContentView(manager: manager)
         }
         .defaultSize(width: 700, height: 700)
