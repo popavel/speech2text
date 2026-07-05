@@ -282,24 +282,27 @@ class TranscriptionManager {
 
             status = .transcribing(progress: 0)
 
+            // Built once per run (not per file): the options depend only on the current
+            // selections, so one snapshot keeps every file in the run consistent (the pickers
+            // stay interactive during a run, so a mid-run edit can't split the batch).
+            let options = makeDecodingOptions()
+
             var allText = ""
             let total = droppedFileURLs.count
 
             for (index, url) in droppedFileURLs.enumerated() {
                 let audioURL = try await prepareAudio(from: url)
 
-                let options = makeDecodingOptions()
-
                 let results = try await kit.transcribe(
                     audioPath: audioURL.path,
                     decodeOptions: options
                 )
-                let text = results.map(\.text).joined(separator: " ")
+                let text = Self.displayTranscript(joining: results.map(\.text))
 
                 if total > 1 {
                     allText += "--- \(url.lastPathComponent) ---\n"
                 }
-                allText += text.trimmingCharacters(in: .whitespacesAndNewlines)
+                allText += text
                 allText += "\n\n"
 
                 status = .transcribing(progress: Double(index + 1) / Double(total))
@@ -331,6 +334,22 @@ class TranscriptionManager {
             options.language = selectedLanguage.code
         }
         return options
+    }
+
+    /// Placeholder shown when a file produced no transcript text. `.vad` chunking (always on) has
+    /// WhisperKit silently drop chunks whose decode failed — returning fewer/zero results rather
+    /// than throwing — and silent audio can also legitimately yield nothing. Either way, surface a
+    /// visible marker instead of a blank result that reads as a successful-but-empty run.
+    nonisolated static let noSpeechPlaceholder = "[No speech could be transcribed]"
+
+    /// The transcript to display for one file: its per-chunk texts joined and trimmed, or
+    /// `noSpeechPlaceholder` when that leaves nothing. Extracted as pure/`nonisolated static` logic
+    /// so the "empty → marker" rule is unit-testable without loading a model (like
+    /// `makeDecodingOptions`). Input is the raw `TranscriptionResult.text` values for the file.
+    nonisolated static func displayTranscript(joining segmentTexts: [String]) -> String {
+        let joined = segmentTexts.joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? noSpeechPlaceholder : joined
     }
 
     // MARK: Audio Preparation
