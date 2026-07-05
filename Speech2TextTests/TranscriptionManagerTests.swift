@@ -206,6 +206,43 @@ struct TranscriptionErrorTests {
     }
 }
 
+// MARK: - Transcript aggregation
+
+/// Covers `displayTranscript(joining:)` — the pure state→text mapping extracted from
+/// `startTranscription`'s per-file loop so the "empty result → visible marker" rule is testable
+/// without loading a model. VAD chunking (now always on) can silently drop chunks whose decode
+/// failed, so an empty transcript must surface a marker rather than a blank that reads as success.
+@Suite("Transcript aggregation")
+struct TranscriptAggregationTests {
+    @Test("No results yields the no-speech placeholder")
+    func noResultsYieldsPlaceholder() {
+        #expect(
+            TranscriptionManager.displayTranscript(joining: [])
+                == TranscriptionManager.noSpeechPlaceholder
+        )
+    }
+
+    @Test("Whitespace-only chunk texts yield the no-speech placeholder")
+    func whitespaceOnlyYieldsPlaceholder() {
+        #expect(
+            TranscriptionManager.displayTranscript(joining: ["", "   ", "\n"])
+                == TranscriptionManager.noSpeechPlaceholder
+        )
+    }
+
+    @Test("Non-empty chunk texts are joined with a single space")
+    func chunksAreJoinedWithSpace() {
+        #expect(
+            TranscriptionManager.displayTranscript(joining: ["Hello", "world"]) == "Hello world"
+        )
+    }
+
+    @Test("Surrounding whitespace is trimmed")
+    func surroundingWhitespaceIsTrimmed() {
+        #expect(TranscriptionManager.displayTranscript(joining: ["  Hello  "]) == "Hello")
+    }
+}
+
 // MARK: - TranscriptionManager
 
 @MainActor

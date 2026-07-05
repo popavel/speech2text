@@ -169,18 +169,12 @@ struct ContentView: View {
 
     private var controlsRow: some View {
         HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Language")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            labeledControl("Language") {
                 LanguagePicker(selection: $manager.selectedLanguage)
                     .frame(width: 160)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Model")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            labeledControl("Model") {
                 Picker("", selection: $manager.selectedModel) {
                     ForEach(WhisperModel.allCases) { model in
                         Text(model.displayName).tag(model)
@@ -191,10 +185,7 @@ struct ContentView: View {
                 .accessibilityIdentifier("modelPicker")
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Task")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            labeledControl("Task") {
                 Picker("", selection: $manager.selectedTask) {
                     ForEach(DecodingTask.allCases, id: \.self) { task in
                         Text(task.displayName).tag(task)
@@ -206,6 +197,21 @@ struct ContentView: View {
             }
 
             Spacer()
+        }
+    }
+
+    /// A caption stacked above a control — the shared layout for the Language/Model/Task pickers
+    /// in `controlsRow`, extracted so the caption styling lives in one place.
+    @ViewBuilder
+    private func labeledControl<Content: View>(
+        _ caption: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            content()
         }
     }
 
