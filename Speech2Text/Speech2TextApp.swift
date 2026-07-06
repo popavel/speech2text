@@ -9,11 +9,16 @@ struct Speech2TextApp: App {
     @State private var manager: TranscriptionManager
 
     init() {
-        let manager = TranscriptionManager()
         #if DEBUG
+        // Under `-uiTesting`, persist settings to an isolated, volatile store instead of
+        // `.standard` so UI tests are deterministic and can't clobber the developer's real
+        // saved settings; a normal launch still uses `.standard`.
+        let manager = TranscriptionManager(defaults: TranscriptionManager.uiTestSettingsStore())
         // Apply the XCUITest launch seam at the one place that now owns the manager
         // (previously ContentView.init). No-op unless launched with `-uiTesting`.
         manager.applyUITestSeamIfPresent()
+        #else
+        let manager = TranscriptionManager()
         #endif
         _manager = State(initialValue: manager)
     }

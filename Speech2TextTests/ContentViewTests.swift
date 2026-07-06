@@ -19,9 +19,15 @@ import ViewInspector
 @Suite("ContentView")
 struct ContentViewTests {
 
+    /// Managers here run on ephemeral defaults: a couple of these tests read/write settings
+    /// (`selectedLanguage`), so keep them off `.standard` and isolated from one another.
+    private func makeManager() -> TranscriptionManager {
+        TranscriptionManager(defaults: makeEphemeralDefaults())
+    }
+
     @Test("Transcribe is disabled when no files are selected")
     func transcribeDisabledWithNoFiles() throws {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         let view = ContentView(manager: manager)
 
         let button = try view.inspect().find(viewWithAccessibilityIdentifier: "transcribeButton")
@@ -30,7 +36,7 @@ struct ContentViewTests {
 
     @Test("Transcribe is enabled once a supported file is added")
     func transcribeEnabledWithFiles() throws {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         manager.addFiles([URL(fileURLWithPath: "/tmp/a.mp3")])
         let view = ContentView(manager: manager)
 
@@ -40,7 +46,7 @@ struct ContentViewTests {
 
     @Test("The file list renders one entry per added file")
     func fileListRendersEntryPerFile() throws {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         manager.addFiles([
             URL(fileURLWithPath: "/tmp/a.mp3"),
             URL(fileURLWithPath: "/tmp/b.wav"),
@@ -55,7 +61,7 @@ struct ContentViewTests {
 
     @Test("A skipped unsupported file surfaces the warning row")
     func skippedFilesWarningAppears() throws {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         // Both files are added together; only the unsupported one lands in
         // skippedFileNames and triggers the warning row. The warning gates on
         // skippedFileNames alone — it does not depend on a non-empty fileList.
@@ -74,7 +80,7 @@ struct ContentViewTests {
         // Only an unsupported file is dropped, so droppedFileURLs stays empty. The
         // warning still renders, proving it gates on skippedFileNames alone and not
         // on a non-empty fileList (ContentView.swift:43 vs :31).
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         manager.addFiles([URL(fileURLWithPath: "/tmp/notes.pdf")])
         let view = ContentView(manager: manager)
 
@@ -84,7 +90,7 @@ struct ContentViewTests {
 
     @Test("Status text reflects the manager's status message")
     func statusTextReflectsManager() throws {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         manager.status = .completed
         let view = ContentView(manager: manager)
 
@@ -98,7 +104,7 @@ struct ContentViewTests {
 
     @Test("Each file chip exposes a uniquely indexed remove button")
     func fileChipsHaveIndexedRemoveButtons() throws {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         manager.addFiles([
             URL(fileURLWithPath: "/tmp/a.mp3"),
             URL(fileURLWithPath: "/tmp/b.wav"),
@@ -117,7 +123,7 @@ struct ContentViewTests {
 
     @Test("The language picker button renders the manager's selected language")
     func languagePickerReflectsSelection() throws {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         manager.selectedLanguage = .english
         let view = ContentView(manager: manager)
 
@@ -132,7 +138,7 @@ struct ContentViewTests {
 
     @Test("The language picker button defaults to Auto-detect")
     func languagePickerDefaultsToAuto() throws {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         let view = ContentView(manager: manager)
 
         let label = try view.inspect()
