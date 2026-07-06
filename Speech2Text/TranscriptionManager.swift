@@ -165,8 +165,8 @@ class TranscriptionManager {
         if let code = defaults.string(forKey: Keys.task), let task = DecodingTask(persistenceCode: code) {
             selectedTask = task
         }
-        if let code = defaults.string(forKey: Keys.language) {
-            selectedLanguage = TranscriptionLanguage.allCases.first { $0.code == code } ?? .auto
+        if let id = defaults.string(forKey: Keys.language) {
+            selectedLanguage = TranscriptionLanguage.allCases.first { $0.id == id } ?? .auto
         }
         if defaults.object(forKey: Keys.temperature) != nil {
             temperature = defaults.float(forKey: Keys.temperature)
@@ -188,9 +188,11 @@ class TranscriptionManager {
 
     var droppedFileURLs: [URL] = []
     /// Persisted across launches (like `selectedModel`/`selectedTask`/`temperature`) via `didSet` →
-    /// `defaults`; the empty-string `code` for `.auto` is what gets stored. See `loadPersistedSettings`.
+    /// `defaults`. The row *id* (`displayName`, unique per entry) is what gets stored, so an alias
+    /// that shares a `code` (e.g. Mandarin vs Chinese) round-trips to the exact chosen row; `.auto`
+    /// stores its `"Auto-detect"` id. See `loadPersistedSettings`.
     var selectedLanguage: TranscriptionLanguage = .auto {
-        didSet { defaults.set(selectedLanguage.code, forKey: Keys.language) }
+        didSet { defaults.set(selectedLanguage.id, forKey: Keys.language) }
     }
     var selectedModel: WhisperModel = .base {
         didSet { defaults.set(selectedModel.rawValue, forKey: Keys.model) }

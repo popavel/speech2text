@@ -58,7 +58,27 @@ struct SettingsPersistenceTests {
         #expect(second.selectedTask == .translate)
         #expect(second.selectedModel == .small)
         #expect(second.temperature == 0.4)
-        #expect(second.selectedLanguage.code == "es")
+        #expect(second.selectedLanguage == spanish)
+    }
+
+    @Test("Aliases that share a code round-trip to their exact row")
+    func aliasRoundTripsToExactRow() throws {
+        // WhisperKit lists alias names that map to one code (e.g. Mandarin/Chinese → "zh") as
+        // separate rows. Take one such code's rows and prove each restores to *itself*, not to
+        // whichever alias happens to sort first for that code.
+        let byCode = Dictionary(
+            grouping: TranscriptionLanguage.allCases.filter { $0 != .auto },
+            by: { $0.code }
+        )
+        let aliases = try #require(byCode.values.first { $0.count >= 2 })
+
+        for row in aliases {
+            let store = makeEphemeralDefaults()
+            TranscriptionManager(defaults: store).selectedLanguage = row
+
+            let restored = TranscriptionManager(defaults: store).selectedLanguage
+            #expect(restored == row)
+        }
     }
 
     @Test("restoreDefaults resets all four settings")
