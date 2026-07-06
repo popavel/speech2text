@@ -13,11 +13,17 @@ import WhisperKit
 @Suite("Decoding parameters")
 struct DecodingParametersTests {
 
+    /// Every manager here runs on its own ephemeral defaults so the task/temperature/language
+    /// writes can't touch `.standard` (the app's real domain) or leak between tests.
+    private func makeManager() -> TranscriptionManager {
+        TranscriptionManager(defaults: makeEphemeralDefaults())
+    }
+
     // MARK: Defaults
 
     @Test("Defaults to Transcribe, temperature 0")
     func defaults() {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         #expect(manager.selectedTask == .transcribe)
         #expect(manager.temperature == 0.0)
     }
@@ -41,7 +47,7 @@ struct DecodingParametersTests {
 
     @Test("Options carry the selected task and temperature")
     func optionsCarryTaskAndTemperature() {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         manager.selectedTask = .translate
         manager.temperature = 0.4
 
@@ -52,20 +58,20 @@ struct DecodingParametersTests {
 
     @Test("VAD chunking is always applied")
     func vadChunkingAlwaysApplied() {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         #expect(manager.makeDecodingOptions().chunkingStrategy == .vad)
     }
 
     @Test("Auto-detect leaves language nil for WhisperKit to detect")
     func autoLeavesLanguageNil() {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         manager.selectedLanguage = .auto
         #expect(manager.makeDecodingOptions().language == nil)
     }
 
     @Test("A specific language is projected onto options.language")
     func specificLanguageIsProjected() {
-        let manager = TranscriptionManager()
+        let manager = makeManager()
         // Pick any real non-auto entry from the mirrored list.
         guard let spanish = TranscriptionLanguage.allCases.first(where: { $0.code == "es" }) else {
             Issue.record("Expected a Spanish entry in the language list")

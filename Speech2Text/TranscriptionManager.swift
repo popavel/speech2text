@@ -61,6 +61,19 @@ extension DecodingTask {
         case .translate: return "Translate to English"
         }
     }
+
+    /// Stable string used to persist the task in `UserDefaults`. `DecodingTask` is WhisperKit's
+    /// own enum and is not `RawRepresentable`, so we map its two cases explicitly rather than
+    /// leaning on `description` (whose format WhisperKit could change out from under us).
+    var persistenceCode: String { self == .translate ? "translate" : "transcribe" }
+
+    init?(persistenceCode: String) {
+        switch persistenceCode {
+        case "transcribe": self = .transcribe
+        case "translate": self = .translate
+        default: return nil
+        }
+    }
 }
 
 // MARK: - Model
@@ -120,20 +133,81 @@ enum TranscriptionError: LocalizedError, Equatable {
 @Observable
 class TranscriptionManager {
 
+    // MARK: Persistence
+
+    /// Backing store for the persisted user settings (task, language, model, temperature).
+    /// Injectable so tests use an ephemeral domain instead of `.standard`: the unit-test host
+    /// shares the app's bundle id, so writing real settings from tests would be cross-talk.
+    private let defaults: UserDefaults
+
+    /// `UserDefaults` keys for the persisted settings. Internal (not private) so tests can seed a
+    /// raw/invalid value and assert the load path's fallbacks.
+    enum Keys {
+        static let language = "settings.selectedLanguage"
+        static let model = "settings.selectedModel"
+        static let task = "settings.selectedTask"
+        static let temperature = "settings.temperature"
+    }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        loadPersistedSettings()
+    }
+
+    /// Overlay any persisted settings onto the declared defaults. Absent or invalid values leave
+    /// the code default in place — e.g. a model id no longer offered after an app update, or a
+    /// language WhisperKit has dropped (→ `.auto`). Called once from `init`; assigning here is
+    /// idempotent with the properties' `didSet` (it writes back the value just read).
+    private func loadPersistedSettings() {
+        if let raw = defaults.string(forKey: Keys.model), let model = WhisperModel(rawValue: raw) {
+            selectedModel = model
+        }
+        if let code = defaults.string(forKey: Keys.task), let task = DecodingTask(persistenceCode: code) {
+            selectedTask = task
+        }
+        if let code = defaults.string(forKey: Keys.language) {
+            selectedLanguage = TranscriptionLanguage.allCases.first { $0.code == code } ?? .auto
+        }
+        if defaults.object(forKey: Keys.temperature) != nil {
+            temperature = defaults.float(forKey: Keys.temperature)
+        }
+    }
+
+    /// Reset the four user settings to their defaults: Transcribe, Base model, temperature 0,
+    /// Auto-detect language. Each assignment's `didSet` re-persists, so the store reflects the reset
+    /// too. Does not touch the loaded engine — the model only (re)loads on the next
+    /// `startTranscription`, so restoring `.base` never triggers a download from here.
+    func restoreDefaults() {
+        selectedTask = .transcribe
+        selectedModel = .base
+        temperature = 0.0
+        selectedLanguage = .auto
+    }
+
     // MARK: State
 
     var droppedFileURLs: [URL] = []
-    var selectedLanguage: TranscriptionLanguage = .auto
-    var selectedModel: WhisperModel = .base
+    /// Persisted across launches (like `selectedModel`/`selectedTask`/`temperature`) via `didSet` →
+    /// `defaults`; the empty-string `code` for `.auto` is what gets stored. See `loadPersistedSettings`.
+    var selectedLanguage: TranscriptionLanguage = .auto {
+        didSet { defaults.set(selectedLanguage.code, forKey: Keys.language) }
+    }
+    var selectedModel: WhisperModel = .base {
+        didSet { defaults.set(selectedModel.rawValue, forKey: Keys.model) }
+    }
     /// Transcribe (keep source language) vs translate-to-English. Projected straight onto
     /// `DecodingOptions.task`; `.translate` always targets English regardless of `selectedLanguage`
     /// (which names the *source*). Uses WhisperKit's own `CaseIterable` enum so the picker is a
     /// zero-maintenance mirror, like `TranscriptionLanguage`.
-    var selectedTask: DecodingTask = .transcribe
+    var selectedTask: DecodingTask = .transcribe {
+        didSet { defaults.set(selectedTask.persistenceCode, forKey: Keys.task) }
+    }
     /// Decoding temperature. `0.0` = greedy/most accurate; higher adds randomness. Exposed behind
     /// the UI's Advanced disclosure — for transcription 0 is almost always best, and WhisperKit's
     /// real use of temperature is the internal fallback ladder on failed segments.
-    var temperature: Float = 0.0
+    var temperature: Float = 0.0 {
+        didSet { defaults.set(temperature, forKey: Keys.temperature) }
+    }
     var status: TranscriptionStatus = .idle
     var transcriptionResult: String = ""
 
@@ -521,6 +595,21 @@ class TranscriptionManager {
 
 #if DEBUG
 extension TranscriptionManager {
+    /// The `UserDefaults` a UI-test launch should persist settings into: a cleared, volatile suite
+    /// isolated from `.standard`. The XCUITest host runs as the real app bundle, so persisting to
+    /// `.standard` would make settings-sensitive UI tests non-deterministic (one run's picker
+    /// selection would survive into the next) and would clobber the developer's real saved
+    /// settings. A normal launch (no `-uiTesting`) gets `.standard`, untouched.
+    static func uiTestSettingsStore(
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> UserDefaults {
+        guard arguments.contains("-uiTesting") else { return .standard }
+        let suiteName = "com.speech2text.uitests"
+        guard let suite = UserDefaults(suiteName: suiteName) else { return .standard }
+        suite.removePersistentDomain(forName: suiteName)
+        return suite
+    }
+
     /// Reads launch arguments/environment set by XCUITest and seeds state so UI
     /// tests can exercise the interface without a file dialog, drag-and-drop, or
     /// loading WhisperKit (which would download a model). No-op unless launched

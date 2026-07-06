@@ -557,6 +557,7 @@ struct SettingsView: View {
 
     @State private var cacheBytes: Int64?
     @State private var showDeleteConfirmation = false
+    @State private var showRestoreConfirmation = false
     @State private var refreshTask: Task<Void, Never>?
     /// Whether a size walk is currently in flight. Coalesces the `.task` +
     /// `.onChange(controlActiveState)` double-fire on first open (and rapid refocus)
@@ -587,9 +588,17 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Section("Defaults") {
+                Button("Restore Default Settings") {
+                    showRestoreConfirmation = true
+                }
+                .disabled(manager.isProcessing)
+                .accessibilityIdentifier("restoreDefaultsButton")
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 200)
+        .frame(width: 420, height: 280)
         .task { refreshSize() }
         .onChange(of: controlActiveState) { _, state in
             // macOS builds the Settings window once and merely hides it on close, so
@@ -626,6 +635,16 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(confirmationMessage)
+        }
+        .confirmationDialog(
+            "Restore default settings?",
+            isPresented: $showRestoreConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Restore") { manager.restoreDefaults() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Task, language, model, and temperature will return to their defaults.")
         }
     }
 
