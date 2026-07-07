@@ -17,10 +17,12 @@
 		641ECE38BB83D8789283077C /* tone.aac in Resources */ = {isa = PBXBuildFile; fileRef = A739220AADC996FE6AF70F63 /* tone.aac */; };
 		6588BBA074EF1F9318039BFE /* TranscriptionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BD5F2DD613FB74ED192E9E /* TranscriptionManagerTests.swift */; };
 		6B8951BC38B682BE761089B0 /* TranscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18BC5C2C8E4D6DFCEC77E399 /* TranscriptionManager.swift */; };
+		6E5883BB989D3E573ED43CF2 /* ManagerFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB3499E990997E522A6E76D /* ManagerFixture.swift */; };
 		8C64B592EB1CD30DFC87E00D /* MediaFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31574C4C2C482101D4B25A0B /* MediaFixtures.swift */; };
 		9842F6E9AB5C932CECD3DC99 /* Speech2TextApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0550083328F5CD9C15E2E33D /* Speech2TextApp.swift */; };
 		9F0EF0DDF19E50E9959B1FA6 /* AudioFormatDecodabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06274BF2E732BF1629B0A4CF /* AudioFormatDecodabilityTests.swift */; };
 		A3F273342E6E6EF2526082E1 /* TranscriptionPipelineIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CBA8B99A25889C574665D9 /* TranscriptionPipelineIntegrationTests.swift */; };
+		ADF7456B8B4E0FF8FCB241EF /* ManagerFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB3499E990997E522A6E76D /* ManagerFixture.swift */; };
 		C296B22884C3C2464DF92C44 /* DecodingParametersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E84E2174D83A011D947F5920 /* DecodingParametersTests.swift */; };
 		C54A594EB348E23685BFDDD8 /* ViewInspector in Frameworks */ = {isa = PBXBuildFile; productRef = 997B7883B0EAB1415BF30DC3 /* ViewInspector */; };
 		C7951CBF981C5F6CA2D7A569 /* Speech2TextUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F92F7F9BC61D6125C150C18 /* Speech2TextUITests.swift */; };
@@ -61,6 +63,7 @@
 		21AB074AFFC5D1AD1EE56710 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		31574C4C2C482101D4B25A0B /* MediaFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaFixtures.swift; sourceTree = "<group>"; };
 		3668312EB0D98FBE6AACB6FF /* Speech2Text.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Speech2Text.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3AB3499E990997E522A6E76D /* ManagerFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagerFixture.swift; sourceTree = "<group>"; };
 		3DDCC02578808684135ED8B7 /* TranscriptionLanguage+Fixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TranscriptionLanguage+Fixtures.swift"; sourceTree = "<group>"; };
 		420FFF7A6196DB12A7DF261F /* ContentViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewTests.swift; sourceTree = "<group>"; };
 		524DD7DC6DC8862030F9DF33 /* SettingsPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPersistenceTests.swift; sourceTree = "<group>"; };
@@ -98,6 +101,7 @@
 		3838B2C57A11B475E3C27641 /* Speech2TextTestSupport */ = {
 			isa = PBXGroup;
 			children = (
+				3AB3499E990997E522A6E76D /* ManagerFixture.swift */,
 				3DDCC02578808684135ED8B7 /* TranscriptionLanguage+Fixtures.swift */,
 			);
 			path = Speech2TextTestSupport;
@@ -325,6 +329,7 @@
 			files = (
 				CA01503AA66EAF3D136876CA /* ContentViewTests.swift in Sources */,
 				C296B22884C3C2464DF92C44 /* DecodingParametersTests.swift in Sources */,
+				ADF7456B8B4E0FF8FCB241EF /* ManagerFixture.swift in Sources */,
 				1D0C05493AAE9EC4B49E469E /* SettingsPersistenceTests.swift in Sources */,
 				03C59C0DF2A8D77A52EB517E /* TranscriptionLanguage+Fixtures.swift in Sources */,
 				6588BBA074EF1F9318039BFE /* TranscriptionManagerTests.swift in Sources */,
@@ -347,6 +352,7 @@
 			files = (
 				5CCCC69CB4868E26C2B37BE7 /* AudioExtractionIntegrationTests.swift in Sources */,
 				9F0EF0DDF19E50E9959B1FA6 /* AudioFormatDecodabilityTests.swift in Sources */,
+				6E5883BB989D3E573ED43CF2 /* ManagerFixture.swift in Sources */,
 				8C64B592EB1CD30DFC87E00D /* MediaFixtures.swift in Sources */,
 				027BEFB2FCCBCAAAE83C7436 /* TranscriptionLanguage+Fixtures.swift in Sources */,
 				A3F273342E6E6EF2526082E1 /* TranscriptionPipelineIntegrationTests.swift in Sources */,

@@ -19,10 +19,12 @@ import ViewInspector
 @Suite("ContentView")
 struct ContentViewTests {
 
-    /// Managers here run on ephemeral defaults: a couple of these tests read/write settings
-    /// (`selectedLanguage`), so keep them off `.standard` and isolated from one another.
+    /// A per-test fixture (fresh ephemeral `UserDefaults`, cleaned up when the test's suite instance
+    /// is released): a couple of these tests read/write settings (`selectedLanguage`), so keep them
+    /// off `.standard` and isolated from one another. See `ManagerFixture` in `Speech2TextTestSupport`.
+    private let fixture = ManagerFixture()
     private func makeManager() -> TranscriptionManager {
-        TranscriptionManager(defaults: makeEphemeralDefaults())
+        fixture.makeManager()
     }
 
     @Test("Transcribe is disabled when no files are selected")
