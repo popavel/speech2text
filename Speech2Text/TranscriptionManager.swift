@@ -149,15 +149,28 @@ class TranscriptionManager {
         static let temperature = "settings.temperature"
     }
 
+    /// The code defaults for the four persisted settings — the single source of truth shared by the
+    /// property initializers below and `restoreDefaults()`, so a changed default can't silently
+    /// diverge between a fresh launch and Restore. Also the value an absent/invalid persisted entry
+    /// falls back to: the initializer runs, then `loadPersistedSettings` leaves it in place.
+    enum Defaults {
+        static let task: DecodingTask = .transcribe
+        static let model: WhisperModel = .base
+        static let temperature: Float = 0.0
+        static let language: TranscriptionLanguage = .auto
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         loadPersistedSettings()
     }
 
     /// Overlay any persisted settings onto the declared defaults. Absent or invalid values leave
-    /// the code default in place — e.g. a model id no longer offered after an app update, or a
-    /// language WhisperKit has dropped (→ `.auto`). Called once from `init`; assigning here is
-    /// idempotent with the properties' `didSet` (it writes back the value just read).
+    /// both the in-memory default AND the stored value untouched — e.g. a model id no longer offered
+    /// after an app update, or a language WhisperKit has dropped, stays on disk so it resolves again
+    /// if that entry returns (rather than being erased to `.auto` on a mere launch). Called once from
+    /// `init`; each *successful* assignment is idempotent with the property's `didSet` (it writes
+    /// back the value just read).
     private func loadPersistedSettings() {
         if let raw = defaults.string(forKey: Keys.model), let model = WhisperModel(rawValue: raw) {
             selectedModel = model
@@ -165,8 +178,9 @@ class TranscriptionManager {
         if let code = defaults.string(forKey: Keys.task), let task = DecodingTask(persistenceCode: code) {
             selectedTask = task
         }
-        if let id = defaults.string(forKey: Keys.language) {
-            selectedLanguage = TranscriptionLanguage.allCases.first { $0.id == id } ?? .auto
+        if let id = defaults.string(forKey: Keys.language),
+           let language = TranscriptionLanguage.allCases.first(where: { $0.id == id }) {
+            selectedLanguage = language
         }
         if defaults.object(forKey: Keys.temperature) != nil {
             temperature = defaults.float(forKey: Keys.temperature)
@@ -178,10 +192,10 @@ class TranscriptionManager {
     /// too. Does not touch the loaded engine — the model only (re)loads on the next
     /// `startTranscription`, so restoring `.base` never triggers a download from here.
     func restoreDefaults() {
-        selectedTask = .transcribe
-        selectedModel = .base
-        temperature = 0.0
-        selectedLanguage = .auto
+        selectedTask = Defaults.task
+        selectedModel = Defaults.model
+        temperature = Defaults.temperature
+        selectedLanguage = Defaults.language
     }
 
     // MARK: State
@@ -191,23 +205,23 @@ class TranscriptionManager {
     /// `defaults`. The row *id* (`displayName`, unique per entry) is what gets stored, so an alias
     /// that shares a `code` (e.g. Mandarin vs Chinese) round-trips to the exact chosen row; `.auto`
     /// stores its `"Auto-detect"` id. See `loadPersistedSettings`.
-    var selectedLanguage: TranscriptionLanguage = .auto {
+    var selectedLanguage: TranscriptionLanguage = Defaults.language {
         didSet { defaults.set(selectedLanguage.id, forKey: Keys.language) }
     }
-    var selectedModel: WhisperModel = .base {
+    var selectedModel: WhisperModel = Defaults.model {
         didSet { defaults.set(selectedModel.rawValue, forKey: Keys.model) }
     }
     /// Transcribe (keep source language) vs translate-to-English. Projected straight onto
     /// `DecodingOptions.task`; `.translate` always targets English regardless of `selectedLanguage`
     /// (which names the *source*). Uses WhisperKit's own `CaseIterable` enum so the picker is a
     /// zero-maintenance mirror, like `TranscriptionLanguage`.
-    var selectedTask: DecodingTask = .transcribe {
+    var selectedTask: DecodingTask = Defaults.task {
         didSet { defaults.set(selectedTask.persistenceCode, forKey: Keys.task) }
     }
     /// Decoding temperature. `0.0` = greedy/most accurate; higher adds randomness. Exposed behind
     /// the UI's Advanced disclosure — for transcription 0 is almost always best, and WhisperKit's
     /// real use of temperature is the internal fallback ladder on failed segments.
-    var temperature: Float = 0.0 {
+    var temperature: Float = Defaults.temperature {
         didSet { defaults.set(temperature, forKey: Keys.temperature) }
     }
     var status: TranscriptionStatus = .idle

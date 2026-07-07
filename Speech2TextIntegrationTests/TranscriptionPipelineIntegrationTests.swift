@@ -34,7 +34,15 @@ struct TranscriptionPipelineIntegrationTests {
     // memory once for the whole (serialized) suite instead of once per test.
     // `modelCachingAcrossRuns` deliberately uses its own fresh manager because
     // it asserts first-load-then-reuse behavior.
-    private static let sharedManager = TranscriptionManager()
+    //
+    // Built on a `ManagerFixture` (ephemeral store), NOT `TranscriptionManager()`: this target is
+    // app-hosted, so `.standard` is the app's real `com.speech2text.app` domain — the `.tiny`/
+    // language writes below would otherwise clobber the developer's saved settings when the suite
+    // runs. The fixture is a process-lifetime `static`, so its store outlives every write here; it
+    // is released only at process exit, leaving a single ephemeral `s2t.test.*` domain (never
+    // `.standard`) — an acceptable residue for this opt-in suite.
+    private static let sharedFixture = ManagerFixture()
+    private static let sharedManager = sharedFixture.makeManager()
 
     private static func preparedManager(
         language: TranscriptionLanguage = .auto
@@ -115,8 +123,10 @@ struct TranscriptionPipelineIntegrationTests {
         let speech = try await MediaFixtures.makeSpeechAudio(text: "Hello.")
         defer { MediaFixtures.cleanup([speech]) }
 
-        // Fresh manager (not the shared one) so the first run is a genuine load.
-        let manager = TranscriptionManager()
+        // Fresh manager (not the shared one) so the first run is a genuine load. On its own
+        // ephemeral fixture — held for the whole test — so it neither loads nor clobbers `.standard`.
+        let fixture = ManagerFixture()
+        let manager = fixture.makeManager()
         manager.selectedModel = .tiny
         manager.addFiles([speech])
 

@@ -13,10 +13,12 @@ import WhisperKit
 @Suite("Decoding parameters")
 struct DecodingParametersTests {
 
-    /// Every manager here runs on its own ephemeral defaults so the task/temperature/language
-    /// writes can't touch `.standard` (the app's real domain) or leak between tests.
+    /// Every manager here comes from a per-test `ManagerFixture` (its own ephemeral `UserDefaults`,
+    /// cleaned up when the suite instance is released) so the task/temperature/language writes can't
+    /// touch `.standard` (the app's real domain) or leak between tests.
+    private let fixture = ManagerFixture()
     private func makeManager() -> TranscriptionManager {
-        TranscriptionManager(defaults: makeEphemeralDefaults())
+        fixture.makeManager()
     }
 
     // MARK: Defaults
