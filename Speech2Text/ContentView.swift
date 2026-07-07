@@ -769,6 +769,7 @@ struct UninstallHelpView: View {
     private let systemPaths = [
         "~/Library/Saved Application State/com.speech2text.app.savedState",
         "~/Library/HTTPStorages/com.speech2text.app",
+        "~/Library/Caches/com.speech2text.app",
     ]
 
     var body: some View {
