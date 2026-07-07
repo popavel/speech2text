@@ -506,6 +506,104 @@ struct TranscriptionManagerTests {
         #expect(manager.loadedModel == nil)                                   // engine dropped anyway — the fix
     }
 
+    // MARK: removeAllAppData
+
+    @Test("removeAllAppData removes the whole folder and clears the persisted settings")
+    func removeAllAppDataWipesFolderAndSettings() async throws {
+        // Populated temp dir standing in for the real app-support folder (never the real one).
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: dir.appendingPathComponent("models"), withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 6_000)
+            .write(to: dir.appendingPathComponent("models/model.bin"))
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Seed all four settings in an isolated store so we can assert they're cleared.
+        let fixture = ManagerFixture()
+        fixture.defaults.set("openai_whisper-base", forKey: TranscriptionManager.Keys.model)
+        fixture.defaults.set("de", forKey: TranscriptionManager.Keys.language)
+        fixture.defaults.set("translate", forKey: TranscriptionManager.Keys.task)
+        fixture.defaults.set(0.4, forKey: TranscriptionManager.Keys.temperature)
+        let manager = fixture.makeManager()
+
+        let removed = await manager.removeAllAppData(appSupport: dir)
+        #expect(removed)
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
+        for key in [TranscriptionManager.Keys.model, TranscriptionManager.Keys.language,
+                    TranscriptionManager.Keys.task, TranscriptionManager.Keys.temperature] {
+            #expect(fixture.defaults.object(forKey: key) == nil)
+        }
+    }
+
+    @Test("removeAllAppData drops the loaded engine when the folder existed")
+    func removeAllAppDataDropsEngine() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 6_000).write(to: dir.appendingPathComponent("model.bin"))
+
+        let manager = TranscriptionManager()
+        manager.loadedModel = "openai_whisper-base"
+
+        let removed = await manager.removeAllAppData(appSupport: dir)
+        #expect(removed)
+        #expect(manager.loadedModel == nil)
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
+    }
+
+    @Test("removeAllAppData clears settings even when the folder is already absent")
+    func removeAllAppDataClearsSettingsOnNoOp() async {
+        // Settings live independently of the folder, so an already-gone folder must still clear them,
+        // and (nothing removed) must leave a loaded engine alone.
+        let ghost = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fixture = ManagerFixture()
+        fixture.defaults.set("openai_whisper-base", forKey: TranscriptionManager.Keys.model)
+        let manager = fixture.makeManager()
+        manager.loadedModel = "openai_whisper-base"
+
+        let removed = await manager.removeAllAppData(appSupport: ghost)
+        #expect(!removed)                                                       // nothing to remove
+        #expect(manager.loadedModel == "openai_whisper-base")                   // engine left alone
+        #expect(fixture.defaults.object(forKey: TranscriptionManager.Keys.model) == nil)  // still cleared
+    }
+
+    @Test("removeAllAppData refuses while a transcription is in progress")
+    func removeAllAppDataRefusesWhileProcessing() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 6_000).write(to: dir.appendingPathComponent("model.bin"))
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let fixture = ManagerFixture()
+        fixture.defaults.set("openai_whisper-base", forKey: TranscriptionManager.Keys.model)
+        let manager = fixture.makeManager()
+        manager.status = .transcribing(progress: 0.5)
+
+        let removed = await manager.removeAllAppData(appSupport: dir)
+        #expect(!removed)
+        #expect(FileManager.default.fileExists(atPath: dir.path))               // guard fired → intact
+        #expect(fixture.defaults.object(forKey: TranscriptionManager.Keys.model) != nil)  // settings intact
+    }
+
+    @Test("removeAllAppData refuses while another deletion is already in progress")
+    func removeAllAppDataRefusesWhileDeleting() async {
+        let manager = TranscriptionManager()
+        manager.isDeletingModels = true
+        let removed = await manager.removeAllAppData()
+        #expect(!removed)
+        #expect(manager.isDeletingModels)
+    }
+
+    @Test("modelCacheDirectory stays nested under appSupportDirectory")
+    func modelCacheNestsUnderAppSupport() {
+        #expect(TranscriptionManager.modelCacheDirectory
+            .deletingLastPathComponent() == TranscriptionManager.appSupportDirectory)
+        #expect(TranscriptionManager.modelCacheDirectory.lastPathComponent == "models")
+    }
+
     @Test("Treats extensions case-insensitively")
     func extensionsAreCaseInsensitive() {
         let manager = TranscriptionManager()

@@ -486,18 +486,16 @@ class TranscriptionManager {
 
     // MARK: - Model Cache / Storage
 
-    /// App-owned directory where WhisperKit models are downloaded. Passed as
-    /// `downloadBase` when constructing WhisperKit (see `startTranscription()`) so models
-    /// live under Application Support — the macOS-sanctioned home for app-managed data —
-    /// instead of polluting the user's `~/Documents/huggingface`. Being the single source
-    /// of truth here means the download path and the cleanup path (`deleteAllModels`)
-    /// can't drift apart.
+    /// The app-owned root under Application Support — `~/Library/Application Support/com.speech2text.app`.
+    /// The single home for everything the app writes there: the `models/` cache lives beneath it, and the
+    /// complete-uninstall wipe (`removeAllAppData`) removes this whole folder. `modelCacheDirectory`
+    /// derives from it, so the download path and both cleanup paths can't drift apart.
     ///
-    /// `create: false`: reading a path shouldn't have the side effect of creating the
-    /// folder. WhisperKit/Hub creates the tree on demand when it actually downloads.
-    /// The bundle-id segment is hard-coded (mirrors `PRODUCT_BUNDLE_IDENTIFIER`) rather
-    /// than read from `Bundle.main`, so the path is identical under the test host.
-    nonisolated static var modelCacheDirectory: URL {
+    /// `create: false`: reading a path shouldn't have the side effect of creating the folder.
+    /// WhisperKit/Hub creates the tree on demand when it actually downloads. The bundle-id segment is
+    /// hard-coded (mirrors `PRODUCT_BUNDLE_IDENTIFIER`) rather than read from `Bundle.main`, so the
+    /// path is identical under the test host.
+    nonisolated static var appSupportDirectory: URL {
         let appSupport = (try? FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
@@ -505,9 +503,16 @@ class TranscriptionManager {
             create: false
         )) ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support", isDirectory: true)
-        return appSupport
-            .appendingPathComponent("com.speech2text.app", isDirectory: true)
-            .appendingPathComponent("models", isDirectory: true)
+        return appSupport.appendingPathComponent("com.speech2text.app", isDirectory: true)
+    }
+
+    /// App-owned directory where WhisperKit models are downloaded. Passed as `downloadBase` when
+    /// constructing WhisperKit (see `startTranscription()`) so models live under Application Support —
+    /// the macOS-sanctioned home for app-managed data — instead of polluting the user's
+    /// `~/Documents/huggingface`. Derives from `appSupportDirectory`, the single source of truth for
+    /// the app's on-disk footprint, so the download path and the cleanup paths can't drift apart.
+    nonisolated static var modelCacheDirectory: URL {
+        appSupportDirectory.appendingPathComponent("models", isDirectory: true)
     }
 
     /// Total bytes on disk under `directory` (recursive sum of regular-file allocated
@@ -605,6 +610,46 @@ class TranscriptionManager {
         isDeletingModels = false
         // Report *full* removal: on a partial failure the caller (Settings) re-walks and surfaces
         // the residual leftover bytes rather than publishing 0.
+        return result.removed
+    }
+
+    /// Complete-uninstall wipe: remove the **entire** app-owned Application Support folder
+    /// (`appSupportDirectory`, which contains `models/` and any future app data) AND clear the
+    /// persisted settings, returning whether the folder was fully removed. This is the in-app half of
+    /// a graceful uninstall — macOS has no uninstaller hook and the app isn't sandboxed, so nothing is
+    /// reaped when it's trashed. Wider than `deleteAllModels` (which targets only `models/`); the two
+    /// share the same busy-flag/off-actor/engine-drop machinery.
+    ///
+    /// Settings are cleared through the injected `UserDefaults` (`removeObject`), NOT by deleting the
+    /// `.plist` file: writes are mediated by `cfprefsd`, which would just re-materialize the file from
+    /// its in-memory cache after a raw delete. Using the injected store also keeps this hermetic under
+    /// the app-hosted test process (never touching the developer's real `.standard` domain).
+    /// `restoreDefaults()` is deliberately NOT called afterward — its `didSet` writers would
+    /// immediately re-persist the keys just cleared. In-memory values are left as they are; a relaunch
+    /// loads the code defaults from the now-empty store. `appSupport` is injectable so the removal can
+    /// be unit-tested against a temp dir instead of the real folder.
+    @discardableResult
+    func removeAllAppData(appSupport: URL = TranscriptionManager.appSupportDirectory) async -> Bool {
+        // Reuse the deletion busy-state and its guards: refuse mid-transcription or mid-delete, and
+        // set the flag synchronously before the first suspension so a concurrent transcription sees
+        // `canTranscribe == false` and can't race the removal.
+        guard !isProcessing, !isDeletingModels else { return false }
+        isDeletingModels = true
+        // Off-actor, run-to-completion removal of the whole folder; capture existence in the same hop.
+        let result = await Task.detached(priority: .utility) { () -> (existed: Bool, removed: Bool) in
+            let existed = FileManager.default.fileExists(atPath: appSupport.path)
+            return (existed, Self.deleteCache(at: appSupport))
+        }.value
+        // Drop the live engine when the cache existed (same partial-removal rationale as deleteAllModels).
+        if result.existed {
+            whisperKit = nil
+            loadedModel = nil
+        }
+        // Clear the persisted settings through the API so cfprefsd actually drops them.
+        for key in [Keys.language, Keys.model, Keys.task, Keys.temperature] {
+            defaults.removeObject(forKey: key)
+        }
+        isDeletingModels = false
         return result.removed
     }
 }
