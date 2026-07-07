@@ -147,6 +147,10 @@ class TranscriptionManager {
         static let model = "settings.selectedModel"
         static let task = "settings.selectedTask"
         static let temperature = "settings.temperature"
+
+        /// Every persisted-setting key, so the complete-uninstall wipe (`removeAllAppData`) can't
+        /// drift from what the app actually persists. Add a new setting's key here too.
+        static let all = [language, model, task, temperature]
     }
 
     /// The code defaults for the four persisted settings — the single source of truth shared by the
@@ -646,7 +650,7 @@ class TranscriptionManager {
             loadedModel = nil
         }
         // Clear the persisted settings through the API so cfprefsd actually drops them.
-        for key in [Keys.language, Keys.model, Keys.task, Keys.temperature] {
+        for key in Keys.all {
             defaults.removeObject(forKey: key)
         }
         isDeletingModels = false

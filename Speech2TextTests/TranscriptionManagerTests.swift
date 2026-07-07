@@ -530,8 +530,9 @@ struct TranscriptionManagerTests {
         let removed = await manager.removeAllAppData(appSupport: dir)
         #expect(removed)
         #expect(!FileManager.default.fileExists(atPath: dir.path))
-        for key in [TranscriptionManager.Keys.model, TranscriptionManager.Keys.language,
-                    TranscriptionManager.Keys.task, TranscriptionManager.Keys.temperature] {
+        // Assert against the same centralized key list the wipe iterates, so a new persisted
+        // key added to `Keys.all` is automatically covered here too.
+        for key in TranscriptionManager.Keys.all {
             #expect(fixture.defaults.object(forKey: key) == nil)
         }
     }
@@ -543,7 +544,9 @@ struct TranscriptionManagerTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try Data(repeating: 0xAB, count: 6_000).write(to: dir.appendingPathComponent("model.bin"))
 
-        let manager = TranscriptionManager()
+        // Isolated store: removeAllAppData clears the settings keys, and the unit-test host
+        // shares the app's bundle id, so a `.standard`-backed manager would wipe the real ones.
+        let manager = ManagerFixture().makeManager()
         manager.loadedModel = "openai_whisper-base"
 
         let removed = await manager.removeAllAppData(appSupport: dir)
@@ -590,9 +593,13 @@ struct TranscriptionManagerTests {
 
     @Test("removeAllAppData refuses while another deletion is already in progress")
     func removeAllAppDataRefusesWhileDeleting() async {
-        let manager = TranscriptionManager()
+        // Fixture store + injected ghost dir so that even if the guard ever regressed, this
+        // test could touch neither `.standard` nor the real Application Support folder.
+        let ghost = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let manager = ManagerFixture().makeManager()
         manager.isDeletingModels = true
-        let removed = await manager.removeAllAppData()
+        let removed = await manager.removeAllAppData(appSupport: ghost)
         #expect(!removed)
         #expect(manager.isDeletingModels)
     }
