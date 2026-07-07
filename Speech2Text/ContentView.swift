@@ -557,6 +557,7 @@ struct SettingsView: View {
 
     @State private var cacheBytes: Int64?
     @State private var showDeleteConfirmation = false
+    @State private var showWipeConfirmation = false
     @State private var showRestoreConfirmation = false
     @State private var refreshTask: Task<Void, Never>?
     /// Whether a size walk is currently in flight. Coalesces the `.task` +
@@ -581,6 +582,14 @@ struct SettingsView: View {
                 }
                 .disabled(manager.isProcessing || manager.isDeletingModels || !hasCache)
                 .accessibilityIdentifier("deleteModelsButton")
+
+                Button("Remove All App Data…", role: .destructive) {
+                    showWipeConfirmation = true
+                }
+                // No `hasCache` gate: settings persist even with an empty model cache, so the
+                // complete-uninstall wipe stays available regardless of what's downloaded.
+                .disabled(manager.isProcessing || manager.isDeletingModels)
+                .accessibilityIdentifier("removeAllDataButton")
 
                 if manager.isProcessing {
                     Text("Unavailable while a transcription is running.")
@@ -635,6 +644,29 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(confirmationMessage)
+        }
+        .confirmationDialog(
+            "Remove all Speech2Text data?",
+            isPresented: $showWipeConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Remove All Data", role: .destructive) {
+                Task {
+                    // Same walk-vs-removeItem race avoidance as the model delete: cancel any
+                    // in-flight size walk and clear the coalescing flag before the folder is removed.
+                    refreshTask?.cancel()
+                    isMeasuring = false
+                    let removed = await manager.removeAllAppData()
+                    // Whole folder (models included) gone → size is 0. On a partial removal
+                    // (e.g. a late rmdir failure) re-walk so residual bytes aren't misreported
+                    // as "None" — same handling as the model-delete path above.
+                    if removed { cacheBytes = 0 } else { refreshSize() }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Deletes all downloaded models and your saved settings. This prepares the app for "
+                + "removal — afterwards, quit and drag Speech2Text to the Trash.")
         }
         .confirmationDialog(
             "Restore default settings?",
@@ -719,6 +751,81 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Uninstall Help
+
+/// Standalone window (Help ▸ Uninstalling Speech2Text…) that documents a complete uninstall.
+/// The app isn't sandboxed, so macOS reaps nothing when it's trashed; this explains what the in-app
+/// "Remove All App Data" wipe covers and lists the exact paths for a fully pristine manual removal.
+/// The `SettingsLink` jumps straight to where the wipe button lives (Settings ▸ Storage).
+struct UninstallHelpView: View {
+    /// The leftover paths, shown verbatim so a user can copy them into Finder or Terminal. The first
+    /// two are cleared by "Remove All App Data"; the rest are OS-managed crumbs best removed after
+    /// quitting (macOS rewrites Saved Application State on quit, and cfprefsd re-materializes prefs if
+    /// a setting changes post-wipe), so they're documented rather than deleted in-app.
+    private let appDataPaths = [
+        "~/Library/Application Support/com.speech2text.app",
+        "~/Library/Preferences/com.speech2text.app.plist",
+    ]
+    private let systemPaths = [
+        "~/Library/Saved Application State/com.speech2text.app.savedState",
+        "~/Library/HTTPStorages/com.speech2text.app",
+    ]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Uninstalling Speech2Text")
+                    .font(.title2).bold()
+
+                Text("Speech2Text isn't sandboxed, so dragging it to the Trash leaves some data "
+                    + "behind. Here's how to remove all of it.")
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("1. Remove the app's data").font(.headline)
+                    Text("Use the button below, then confirm. This deletes the downloaded models and "
+                        + "your saved settings:")
+                        .fixedSize(horizontal: false, vertical: true)
+                    ForEach(appDataPaths, id: \.self) { pathRow($0) }
+                    SettingsLink {
+                        Text("Open Settings…")
+                    }
+                    .accessibilityIdentifier("openSettingsLink")
+                    .padding(.top, 2)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("2. Quit and remove the app").font(.headline)
+                    Text("Quit Speech2Text, then drag it from Applications to the Trash.")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("3. (Optional) Remove leftover system files").font(.headline)
+                    Text("After quitting, macOS may keep these small caches. Delete them for a "
+                        + "completely clean removal:")
+                        .fixedSize(horizontal: false, vertical: true)
+                    ForEach(systemPaths, id: \.self) { pathRow($0) }
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityIdentifier("uninstallHelpView")
+    }
+
+    private func pathRow(_ path: String) -> some View {
+        Text(path)
+            .font(.system(.callout, design: .monospaced))
+            .textSelection(.enabled)
+            .foregroundStyle(.secondary)
+    }
+}
+
 #Preview {
     ContentView(manager: TranscriptionManager())
+}
+
+#Preview("Uninstall help") {
+    UninstallHelpView()
 }

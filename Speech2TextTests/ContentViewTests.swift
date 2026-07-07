@@ -149,3 +149,30 @@ struct ContentViewTests {
         #expect(label == "Auto-detect")
     }
 }
+
+// Render tests for the Settings scene's Storage controls. Static inspection only, like the
+// ContentView suite above — never taps the destructive buttons (which would touch the filesystem).
+@MainActor
+@Suite("SettingsView")
+struct SettingsViewTests {
+    private let fixture = ManagerFixture()
+    private func makeManager() -> TranscriptionManager { fixture.makeManager() }
+
+    @Test("Remove All App Data is enabled at rest")
+    func removeAllDataEnabledAtRest() throws {
+        let view = SettingsView(manager: makeManager())
+        let button = try view.inspect().find(viewWithAccessibilityIdentifier: "removeAllDataButton")
+        // Unlike Delete Downloaded Models, the wipe isn't gated on a non-empty cache: settings
+        // persist even with no models, so it must stay available.
+        #expect(!button.isDisabled())
+    }
+
+    @Test("Remove All App Data is disabled while a transcription is running")
+    func removeAllDataDisabledWhileProcessing() throws {
+        let manager = makeManager()
+        manager.status = .transcribing(progress: 0.5)
+        let view = SettingsView(manager: manager)
+        let button = try view.inspect().find(viewWithAccessibilityIdentifier: "removeAllDataButton")
+        #expect(button.isDisabled())
+    }
+}
