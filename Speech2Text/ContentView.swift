@@ -624,22 +624,7 @@ struct SettingsView: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                Task {
-                    // Cancel any in-flight display walk before the directory is removed, so a
-                    // GB-scale enumerator doesn't race removeItem for the same tree. A walk
-                    // can't *start* mid-delete: refreshSize() bails while isDeletingModels is
-                    // set (from before deleteAllModels' first suspension until it returns).
-                    refreshTask?.cancel()
-                    // The cancelled walk's own `isMeasuring = false` may not have landed
-                    // yet; clear it here so the no-op branch's `refreshSize()` below isn't
-                    // blocked by the coalescing guard.
-                    isMeasuring = false
-                    let removed = await manager.deleteAllModels()
-                    // A successful delete removed the directory, so its size is now 0 — set
-                    // it directly rather than re-walking a just-emptied tree. Re-measure only
-                    // when the delete was a no-op (nothing removed) to reflect the real state.
-                    if removed { cacheBytes = 0 } else { refreshSize() }
-                }
+                performRemoval { await manager.deleteAllModels() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -651,17 +636,7 @@ struct SettingsView: View {
             titleVisibility: .visible
         ) {
             Button("Remove All Data", role: .destructive) {
-                Task {
-                    // Same walk-vs-removeItem race avoidance as the model delete: cancel any
-                    // in-flight size walk and clear the coalescing flag before the folder is removed.
-                    refreshTask?.cancel()
-                    isMeasuring = false
-                    let removed = await manager.removeAllAppData()
-                    // Whole folder (models included) gone → size is 0. On a partial removal
-                    // (e.g. a late rmdir failure) re-walk so residual bytes aren't misreported
-                    // as "None" — same handling as the model-delete path above.
-                    if removed { cacheBytes = 0 } else { refreshSize() }
-                }
+                performRemoval { await manager.removeAllAppData() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -708,6 +683,31 @@ struct SettingsView: View {
 
     private static func formatted(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    /// Run a destructive removal and reconcile the displayed cache size — shared by the
+    /// Delete-Downloaded-Models and Remove-All-App-Data buttons.
+    ///
+    /// Cancels any in-flight display walk before the removal, so a GB-scale enumerator doesn't race
+    /// `removeItem` for the same tree; a walk can't *start* mid-removal because `refreshSize()` bails
+    /// while `isDeletingModels` is set, and the manager sets that busy-state synchronously before the
+    /// removal's first suspension. **`removal` must be `@MainActor`** for that to hold: a nonisolated
+    /// `() async -> Bool` would hop off the main actor at `await removal()` (SE-0338) *before*
+    /// `deleteAllModels`/`removeAllAppData` runs, leaving `deletion` nil across a suspension that a
+    /// refocus (`controlActiveState` → `.key` on dialog dismissal) could slip a fresh walk into. With
+    /// `@MainActor` the call is same-actor and runs straight into `wipeDirectory`, which sets
+    /// `deletion` before it suspends. The cancelled walk's own `isMeasuring = false` may not have
+    /// landed yet, so clear it here too — otherwise the no-op branch's `refreshSize()` below would be
+    /// blocked by the coalescing guard. On success the tree is gone (size 0), set directly rather than
+    /// re-walking an emptied tree; on a no-op or partial removal, re-walk so residual bytes aren't
+    /// misreported as "None".
+    private func performRemoval(_ removal: @escaping @MainActor () async -> Bool) {
+        Task {
+            refreshTask?.cancel()
+            isMeasuring = false
+            let removed = await removal()
+            if removed { cacheBytes = 0 } else { refreshSize() }
+        }
     }
 
     /// Recompute the cache size off the main actor.
@@ -758,15 +758,18 @@ struct SettingsView: View {
 /// "Remove All App Data" wipe covers and lists the exact paths for a fully pristine manual removal.
 /// The `SettingsLink` jumps straight to where the wipe button lives (Settings ▸ Storage).
 struct UninstallHelpView: View {
-    /// The leftover paths, shown verbatim so a user can copy them into Finder or Terminal. The first
-    /// two are cleared by "Remove All App Data"; the rest are OS-managed crumbs best removed after
-    /// quitting (macOS rewrites Saved Application State on quit, and cfprefsd re-materializes prefs if
-    /// a setting changes post-wipe), so they're documented rather than deleted in-app.
+    /// The leftover paths, shown verbatim so a user can copy them into Finder or Terminal.
+    /// `appDataPaths` is what "Remove All App Data" fully removes from disk — the app-owned
+    /// Application Support folder. The prefs `.plist` lives in `systemPaths` instead: the wipe
+    /// clears the setting *keys* via `UserDefaults`, but the *file* survives — SwiftUI keeps
+    /// window-frame autosave keys in that same domain, and cfprefsd re-materializes prefs if a
+    /// setting changes post-wipe — so it's best removed manually after quitting, alongside the
+    /// other OS-managed crumbs (macOS also rewrites Saved Application State on quit).
     private let appDataPaths = [
         "~/Library/Application Support/com.speech2text.app",
-        "~/Library/Preferences/com.speech2text.app.plist",
     ]
     private let systemPaths = [
+        "~/Library/Preferences/com.speech2text.app.plist",
         "~/Library/Saved Application State/com.speech2text.app.savedState",
         "~/Library/HTTPStorages/com.speech2text.app",
         "~/Library/Caches/com.speech2text.app",
@@ -784,8 +787,8 @@ struct UninstallHelpView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("1. Remove the app's data").font(.headline)
-                    Text("Use the button below, then confirm. This deletes the downloaded models and "
-                        + "your saved settings:")
+                    Text("Open Settings below, then click Remove All App Data and confirm. This "
+                        + "deletes the downloaded models and clears your saved settings. It removes:")
                         .fixedSize(horizontal: false, vertical: true)
                     ForEach(appDataPaths, id: \.self) { pathRow($0) }
                     SettingsLink {
@@ -803,7 +806,7 @@ struct UninstallHelpView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("3. (Optional) Remove leftover system files").font(.headline)
-                    Text("After quitting, macOS may keep these small caches. Delete them for a "
+                    Text("After quitting, macOS may keep these small files. Delete them for a "
                         + "completely clean removal:")
                         .fixedSize(horizontal: false, vertical: true)
                     ForEach(systemPaths, id: \.self) { pathRow($0) }
