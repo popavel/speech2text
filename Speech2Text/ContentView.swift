@@ -274,7 +274,7 @@ struct ContentView: View {
             Group {
                 // A delete owns the display via the flag (see `statusMessage`), on top of
                 // whatever `status` holds — so check it before switching on `status`.
-                if manager.isDeletingModels {
+                if manager.isRemovingData {
                     Image(systemName: "circle.dotted")
                         .foregroundStyle(.blue)
                 } else {
@@ -372,7 +372,7 @@ struct ContentView: View {
     private var statusColor: Color {
         // Neutral while deleting, even if the underlying `status` is `.completed`/`.error`,
         // so "Deleting…" doesn't render in green/red.
-        if manager.isDeletingModels { return .secondary }
+        if manager.isRemovingData { return .secondary }
         switch manager.status {
         case .error: return .red
         case .completed: return .green
@@ -559,6 +559,9 @@ struct SettingsView: View {
     @State private var showDeleteConfirmation = false
     @State private var showWipeConfirmation = false
     @State private var showRestoreConfirmation = false
+    /// Set when a destructive removal ran but left its target on disk (a genuine failure, not a
+    /// no-op); drives the error alert so a failed wipe can't masquerade as success.
+    @State private var showRemovalError = false
     @State private var refreshTask: Task<Void, Never>?
     /// Whether a size walk is currently in flight. Coalesces the `.task` +
     /// `.onChange(controlActiveState)` double-fire on first open (and rapid refocus)
@@ -580,7 +583,7 @@ struct SettingsView: View {
                 Button("Delete Downloaded Models", role: .destructive) {
                     showDeleteConfirmation = true
                 }
-                .disabled(manager.isProcessing || manager.isDeletingModels || !hasCache)
+                .disabled(manager.isProcessing || manager.isRemovingData || !hasCache)
                 .accessibilityIdentifier("deleteModelsButton")
 
                 Button("Remove All App Data…", role: .destructive) {
@@ -588,7 +591,7 @@ struct SettingsView: View {
                 }
                 // No `hasCache` gate: settings persist even with an empty model cache, so the
                 // complete-uninstall wipe stays available regardless of what's downloaded.
-                .disabled(manager.isProcessing || manager.isDeletingModels)
+                .disabled(manager.isProcessing || manager.isRemovingData)
                 .accessibilityIdentifier("removeAllDataButton")
 
                 if manager.isProcessing {
@@ -624,7 +627,9 @@ struct SettingsView: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                performRemoval { await manager.deleteAllModels() }
+                performRemoval(of: TranscriptionManager.modelCacheDirectory) {
+                    await manager.deleteAllModels()
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -636,7 +641,9 @@ struct SettingsView: View {
             titleVisibility: .visible
         ) {
             Button("Remove All Data", role: .destructive) {
-                performRemoval { await manager.removeAllAppData() }
+                performRemoval(of: TranscriptionManager.appSupportDirectory) {
+                    await manager.removeAllAppData()
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -652,6 +659,14 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Task, language, model, and temperature will return to their defaults.")
+        }
+        // Shared by both destructive buttons, so the copy stays operation-neutral (no "all data" /
+        // uninstall wording that would misdirect a models-only delete failure).
+        .alert("Couldn’t remove files", isPresented: $showRemovalError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Some files couldn’t be removed — check permissions and try again, or remove them "
+                + "manually.")
         }
     }
 
@@ -686,11 +701,12 @@ struct SettingsView: View {
     }
 
     /// Run a destructive removal and reconcile the displayed cache size — shared by the
-    /// Delete-Downloaded-Models and Remove-All-App-Data buttons.
+    /// Delete-Downloaded-Models and Remove-All-App-Data buttons. `directory` is the tree the removal
+    /// targets, used afterwards only to tell a genuine failure from a harmless no-op.
     ///
     /// Cancels any in-flight display walk before the removal, so a GB-scale enumerator doesn't race
     /// `removeItem` for the same tree; a walk can't *start* mid-removal because `refreshSize()` bails
-    /// while `isDeletingModels` is set, and the manager sets that busy-state synchronously before the
+    /// while `isRemovingData` is set, and the manager sets that busy-state synchronously before the
     /// removal's first suspension. **`removal` must be `@MainActor`** for that to hold: a nonisolated
     /// `() async -> Bool` would hop off the main actor at `await removal()` (SE-0338) *before*
     /// `deleteAllModels`/`removeAllAppData` runs, leaving `deletion` nil across a suspension that a
@@ -699,14 +715,32 @@ struct SettingsView: View {
     /// `deletion` before it suspends. The cancelled walk's own `isMeasuring = false` may not have
     /// landed yet, so clear it here too — otherwise the no-op branch's `refreshSize()` below would be
     /// blocked by the coalescing guard. On success the tree is gone (size 0), set directly rather than
-    /// re-walking an emptied tree; on a no-op or partial removal, re-walk so residual bytes aren't
-    /// misreported as "None".
-    private func performRemoval(_ removal: @escaping @MainActor () async -> Bool) {
+    /// re-walking an emptied tree; otherwise re-walk so residual bytes aren't misreported as "None",
+    /// and surface an error only for a genuine failure — see the busy-flag gate below.
+    private func performRemoval(
+        of directory: URL,
+        _ removal: @escaping @MainActor () async -> Bool
+    ) {
         Task {
             refreshTask?.cancel()
             isMeasuring = false
             let removed = await removal()
-            if removed { cacheBytes = 0 } else { refreshSize() }
+            if removed {
+                cacheBytes = 0
+            } else {
+                refreshSize()
+                // A `false` result can mean two very different things: a genuine failure (a real
+                // attempt that left the target on disk), or the manager *refusing* the removal
+                // because a transcription or another removal is in flight — which leaves everything
+                // intact by design and is NOT an error. Only a real attempt clears the busy flags
+                // by the time it returns, so if either is still set the call was refused; suppress
+                // the alert then. This runs synchronously right after `removal()` on the main actor,
+                // so the flags reflect the exact post-call state with no interleaving.
+                if !manager.isProcessing, !manager.isRemovingData,
+                   FileManager.default.fileExists(atPath: directory.path) {
+                    showRemovalError = true
+                }
+            }
         }
     }
 
@@ -720,7 +754,7 @@ struct SettingsView: View {
     ///
     /// Bails while a delete is in flight: a walk begun against a tree being removed could
     /// read a partial size and land after the delete publishes `0`. `deleteAllModels` sets
-    /// `isDeletingModels` synchronously before its first suspension and clears it only after,
+    /// `isRemovingData` synchronously before its first suspension and clears it only after,
     /// so this guard covers the whole delete — no walk can start mid-delete.
     ///
     /// Deliberately does NOT blank `cacheBytes`: the first measure already starts from `nil`
@@ -736,7 +770,7 @@ struct SettingsView: View {
     /// late-resuming cancelled walk could clear the coalescing flag mid-walk, letting a later
     /// refocus spawn a second concurrent, untracked walk.
     private func refreshSize() {
-        guard !manager.isDeletingModels, !isMeasuring else { return }
+        guard !manager.isRemovingData, !isMeasuring else { return }
         isMeasuring = true
         measureGeneration += 1
         let generation = measureGeneration
@@ -758,22 +792,27 @@ struct SettingsView: View {
 /// "Remove All App Data" wipe covers and lists the exact paths for a fully pristine manual removal.
 /// The `SettingsLink` jumps straight to where the wipe button lives (Settings ▸ Storage).
 struct UninstallHelpView: View {
-    /// The leftover paths, shown verbatim so a user can copy them into Finder or Terminal.
-    /// `appDataPaths` is what "Remove All App Data" fully removes from disk — the app-owned
-    /// Application Support folder. The prefs `.plist` lives in `systemPaths` instead: the wipe
-    /// clears the setting *keys* via `UserDefaults`, but the *file* survives — SwiftUI keeps
-    /// window-frame autosave keys in that same domain, and cfprefsd re-materializes prefs if a
-    /// setting changes post-wipe — so it's best removed manually after quitting, alongside the
-    /// other OS-managed crumbs (macOS also rewrites Saved Application State on quit).
-    private let appDataPaths = [
-        "~/Library/Application Support/com.speech2text.app",
-    ]
-    private let systemPaths = [
-        "~/Library/Preferences/com.speech2text.app.plist",
-        "~/Library/Saved Application State/com.speech2text.app.savedState",
-        "~/Library/HTTPStorages/com.speech2text.app",
-        "~/Library/Caches/com.speech2text.app",
-    ]
+    /// The leftover paths, shown verbatim so a user can copy them into Finder or Terminal. Every
+    /// path's bundle-id segment comes from the shared `TranscriptionManager.bundleIdentifier` so a
+    /// rename can't leave the guide pointing at a stale folder; the `~/Library/...` locations are
+    /// macOS-fixed. `static let` so the constants are computed once rather than rebuilt on each render.
+    ///
+    /// `appDataPath` mirrors what "Remove All App Data" removes — the app-owned `appSupportDirectory`,
+    /// which is exactly `~/Library/Application Support/<bundleIdentifier>`. The prefs `.plist` lives in
+    /// `systemPaths` instead: the wipe clears the setting *keys* via `UserDefaults`, but the *file*
+    /// survives — SwiftUI keeps window-frame autosave keys in that same domain, and cfprefsd
+    /// re-materializes prefs if a setting changes post-wipe — so it's best removed manually after
+    /// quitting, alongside the other OS-managed crumbs (macOS also rewrites Saved App State on quit).
+    private static let appDataPath = "~/Library/Application Support/\(TranscriptionManager.bundleIdentifier)"
+    private static let systemPaths: [String] = {
+        let id = TranscriptionManager.bundleIdentifier
+        return [
+            "~/Library/Preferences/\(id).plist",
+            "~/Library/Saved Application State/\(id).savedState",
+            "~/Library/HTTPStorages/\(id)",
+            "~/Library/Caches/\(id)",
+        ]
+    }()
 
     var body: some View {
         ScrollView {
@@ -790,7 +829,7 @@ struct UninstallHelpView: View {
                     Text("Open Settings below, then click Remove All App Data and confirm. This "
                         + "deletes the downloaded models and clears your saved settings. It removes:")
                         .fixedSize(horizontal: false, vertical: true)
-                    ForEach(appDataPaths, id: \.self) { pathRow($0) }
+                    pathRow(Self.appDataPath)
                     SettingsLink {
                         Text("Open Settings…")
                     }
@@ -809,7 +848,7 @@ struct UninstallHelpView: View {
                     Text("After quitting, macOS may keep these small files. Delete them for a "
                         + "completely clean removal:")
                         .fixedSize(horizontal: false, vertical: true)
-                    ForEach(systemPaths, id: \.self) { pathRow($0) }
+                    ForEach(Self.systemPaths, id: \.self) { pathRow($0) }
                 }
             }
             .padding(24)

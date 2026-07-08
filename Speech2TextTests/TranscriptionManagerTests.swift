@@ -363,7 +363,7 @@ struct TranscriptionManagerTests {
         await manager.startTranscription()
         // Never advanced to .loadingModel, and the delete flag still holds.
         #expect(manager.status == .idle)
-        #expect(manager.isDeletingModels)
+        #expect(manager.isRemovingData)
     }
 
     @Test("deleteAllModels refuses while another deletion is already in progress")
@@ -376,7 +376,7 @@ struct TranscriptionManagerTests {
         // Re-entrancy guard: returns before any filesystem work, so this stays hermetic.
         let removed = await manager.deleteAllModels(from: ghost)
         #expect(!removed)
-        #expect(manager.isDeletingModels)
+        #expect(manager.isRemovingData)
     }
 
     @Test("statusMessage shows the delete message whenever a delete is in flight")
@@ -403,11 +403,11 @@ struct TranscriptionManagerTests {
         // because the flag is set before the first await.
         let handle = Task { await manager.deleteAllModels(from: dir) }
         var spins = 0
-        while !manager.isDeletingModels && spins < 1000 {
+        while !manager.isRemovingData && spins < 1000 {
             await Task.yield()
             spins += 1
         }
-        #expect(manager.isDeletingModels)
+        #expect(manager.isRemovingData)
 
         // The main actor is ours until the next await, so the delete can't clear the flag
         // under us. Mid-delete the queue is still freely mutable (decoupled) …
@@ -417,12 +417,12 @@ struct TranscriptionManagerTests {
         // … but even though clearFiles() reset status to .idle, the guard holds, so a
         // transcription cannot start and race the cache removal. This is the regression.
         #expect(manager.status == .idle)
-        #expect(manager.isDeletingModels)
+        #expect(manager.isRemovingData)
         #expect(!manager.canTranscribe)
 
         _ = await handle.value
         // After the delete: flag cleared, cache gone, the user's clear intent stands.
-        #expect(!manager.isDeletingModels)
+        #expect(!manager.isRemovingData)
         #expect(manager.status == .idle)
         #expect(!FileManager.default.fileExists(atPath: dir.path))
     }
@@ -436,11 +436,11 @@ struct TranscriptionManagerTests {
 
         let manager = TranscriptionManager()
         manager.status = .completed
-        #expect(!manager.isDeletingModels)
+        #expect(!manager.isRemovingData)
 
         let removed = await manager.deleteAllModels(from: dir)
         #expect(removed)
-        #expect(!manager.isDeletingModels)      // toggled back off
+        #expect(!manager.isRemovingData)      // toggled back off
         #expect(manager.status == .completed)   // session status untouched — no restore dance
         #expect(!FileManager.default.fileExists(atPath: dir.path))
     }
@@ -511,6 +511,16 @@ struct TranscriptionManagerTests {
 
     // MARK: removeAllAppData
 
+    /// Assign a non-default value to every persisted setting so each property's `didSet` fires and
+    /// writes its key — the shared seed for the persisted-key tests. (A `didSet` fires on any
+    /// assignment; the non-default values just make the intent explicit.)
+    private func seedPersistedSettings(_ manager: TranscriptionManager) {
+        manager.selectedModel = .tiny
+        manager.selectedLanguage = TranscriptionLanguage.allCases.first(where: { $0 != .auto })!
+        manager.selectedTask = .translate
+        manager.temperature = 0.4
+    }
+
     @Test("removeAllAppData removes the whole folder and clears the persisted settings")
     func removeAllAppDataWipesFolderAndSettings() async throws {
         // Populated temp dir standing in for the real app-support folder (never the real one).
@@ -522,26 +532,33 @@ struct TranscriptionManagerTests {
             .write(to: dir.appendingPathComponent("models/model.bin"))
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        // Seed all four settings in an isolated store so we can assert they're cleared.
+        // Seed through the REAL setters (not defaults.set) so the store holds exactly what the app
+        // persists. The exact set is checked by `persistedKeysMatchKeysAll`; here we only need the
+        // store to be non-empty so "empty after" proves the wipe cleared what was there.
         let fixture = ManagerFixture()
-        fixture.defaults.set("openai_whisper-base", forKey: TranscriptionManager.Keys.model)
-        fixture.defaults.set("de", forKey: TranscriptionManager.Keys.language)
-        fixture.defaults.set("translate", forKey: TranscriptionManager.Keys.task)
-        fixture.defaults.set(0.4, forKey: TranscriptionManager.Keys.temperature)
         let manager = fixture.makeManager()
+        seedPersistedSettings(manager)
+        #expect(!fixture.persistedKeys.isEmpty)
 
         let removed = await manager.removeAllAppData(appSupport: dir)
         #expect(removed)
         #expect(!FileManager.default.fileExists(atPath: dir.path))
-        // Assert each seeded key by name — NOT by looping `Keys.all`, which is circular: a key
-        // missing from `Keys.all` would be skipped by the wipe AND by the check, hiding the drift.
-        #expect(fixture.defaults.object(forKey: TranscriptionManager.Keys.model) == nil)
-        #expect(fixture.defaults.object(forKey: TranscriptionManager.Keys.language) == nil)
-        #expect(fixture.defaults.object(forKey: TranscriptionManager.Keys.task) == nil)
-        #expect(fixture.defaults.object(forKey: TranscriptionManager.Keys.temperature) == nil)
-        // Tripwire: adding a key to `Keys.all` fails this until the seeds + per-key assertions
-        // above are updated to match, so the wipe's coverage can't silently outgrow this test.
-        #expect(TranscriptionManager.Keys.all.count == 4)
+        // The wipe cleared every persisted key — asserted against the real store contents, so it
+        // can't pass while leaving behind a key that was actually persisted.
+        #expect(fixture.persistedKeys.isEmpty)
+    }
+
+    @Test("The persisted-setting didSet writers cover exactly Keys.all")
+    func persistedKeysMatchKeysAll() {
+        // Seeding writes each persisted property's key; comparing the live store against Keys.all
+        // catches a stale/extra Keys.all entry, a key written under the wrong name, and forces this
+        // seed list to grow whenever Keys.all does (an unseeded new key makes the sets differ).
+        // Residual gap: a new persisted property added to neither Keys.all nor this seed is invisible
+        // to any hand-listed test — closing that fully would need a settings registry.
+        let fixture = ManagerFixture()
+        let manager = fixture.makeManager()
+        seedPersistedSettings(manager)
+        #expect(fixture.persistedKeys == Set(TranscriptionManager.Keys.all))
     }
 
     @Test("removeAllAppData drops the loaded engine when the folder existed")
@@ -609,7 +626,7 @@ struct TranscriptionManagerTests {
         manager.deletion = .models
         let removed = await manager.removeAllAppData(appSupport: ghost)
         #expect(!removed)
-        #expect(manager.isDeletingModels)
+        #expect(manager.isRemovingData)
     }
 
     @Test("removeAllAppData toggles the busy-state off and leaves status untouched")
@@ -626,11 +643,11 @@ struct TranscriptionManagerTests {
         // app's bundle id, so a `.standard`-backed manager would wipe the developer's real ones.
         let manager = ManagerFixture().makeManager()
         manager.status = .completed
-        #expect(!manager.isDeletingModels)
+        #expect(!manager.isRemovingData)
 
         let removed = await manager.removeAllAppData(appSupport: dir)
         #expect(removed)
-        #expect(!manager.isDeletingModels)      // toggled back off
+        #expect(!manager.isRemovingData)      // toggled back off
         #expect(manager.status == .completed)   // session status untouched — no restore dance
         #expect(!FileManager.default.fileExists(atPath: dir.path))
     }
