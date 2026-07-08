@@ -275,7 +275,7 @@ class TranscriptionManager {
     }
 
     /// Which destructive removal is in flight, or `nil` when none is. The single source of truth for
-    /// the deletion busy-state — it drives `canTranscribe`, the `isDeletingModels` guard, and the
+    /// the deletion busy-state — it drives `canTranscribe`, the `isRemovingData` guard, and the
     /// status display (each case owns its message). Deliberately **not** derived from `status`:
     /// "a transcription result" and "a removal is running" are orthogonal, and piggybacking on
     /// `status` let any status write (e.g. `clearFiles()` → `.idle`) silently drop the guard
@@ -286,10 +286,10 @@ class TranscriptionManager {
     /// Whether a destructive removal (model-cache delete or full app-data wipe) is in flight.
     /// Computed from `deletion` so the many read-only call sites that only need the yes/no
     /// busy-state — `canTranscribe` and the Storage buttons — stay unchanged.
-    var isDeletingModels: Bool { deletion != nil }
+    var isRemovingData: Bool { deletion != nil }
 
     var canTranscribe: Bool {
-        !droppedFileURLs.isEmpty && !isProcessing && !isDeletingModels
+        !droppedFileURLs.isEmpty && !isProcessing && !isRemovingData
     }
 
     var statusMessage: String {
@@ -510,6 +510,12 @@ class TranscriptionManager {
 
     // MARK: - Model Cache / Storage
 
+    /// The app's bundle identifier — the single source of truth for every on-disk path segment the
+    /// app owns. Hard-coded (mirrors `PRODUCT_BUNDLE_IDENTIFIER`) rather than read from `Bundle.main`
+    /// so the path is identical under the test host, which runs in a different bundle. Referenced by
+    /// `appSupportDirectory` and by the uninstall guide's leftover-path list so they can't drift.
+    nonisolated static let bundleIdentifier = "com.speech2text.app"
+
     /// The app-owned root under Application Support — `~/Library/Application Support/com.speech2text.app`.
     /// The single home for everything the app writes there: the `models/` cache lives beneath it, and the
     /// complete-uninstall wipe (`removeAllAppData`) removes this whole folder. `modelCacheDirectory`
@@ -517,8 +523,8 @@ class TranscriptionManager {
     ///
     /// `create: false`: reading a path shouldn't have the side effect of creating the folder.
     /// WhisperKit/Hub creates the tree on demand when it actually downloads. The bundle-id segment is
-    /// hard-coded (mirrors `PRODUCT_BUNDLE_IDENTIFIER`) rather than read from `Bundle.main`, so the
-    /// path is identical under the test host.
+    /// `bundleIdentifier` (hard-coded there rather than read from `Bundle.main`, so the path is
+    /// identical under the test host).
     nonisolated static var appSupportDirectory: URL {
         let appSupport = (try? FileManager.default.url(
             for: .applicationSupportDirectory,
@@ -527,7 +533,7 @@ class TranscriptionManager {
             create: false
         )) ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support", isDirectory: true)
-        return appSupport.appendingPathComponent("com.speech2text.app", isDirectory: true)
+        return appSupport.appendingPathComponent(bundleIdentifier, isDirectory: true)
     }
 
     /// App-owned directory where WhisperKit models are downloaded. Passed as `downloadBase` when

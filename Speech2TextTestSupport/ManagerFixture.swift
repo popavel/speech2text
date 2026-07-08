@@ -23,6 +23,13 @@ final class ManagerFixture: @unchecked Sendable {
     let defaults: UserDefaults
     private let suiteName: String
 
+    /// The keys currently persisted in this fixture's isolated domain — exactly what the manager's
+    /// `didSet` writers produced, since the domain starts empty. Lets a test assert the persisted set
+    /// equals `Keys.all` (and that the wipe empties it) without a hand-maintained key list.
+    var persistedKeys: Set<String> {
+        Set((defaults.persistentDomain(forName: suiteName) ?? [:]).keys)
+    }
+
     init() {
         suiteName = "s2t.test.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)!
