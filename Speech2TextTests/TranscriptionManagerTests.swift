@@ -348,7 +348,7 @@ struct TranscriptionManagerTests {
     func cannotTranscribeWhileDeletingModels() {
         let manager = TranscriptionManager()
         manager.addFiles([URL(fileURLWithPath: "/tmp/clip.mp3")])
-        manager.isDeletingModels = true
+        manager.deletion = .models
         // The deletion busy-state must gate the main window's Transcribe button so a
         // transcription can't start mid-delete and race the cache removal.
         #expect(!manager.canTranscribe)
@@ -358,7 +358,7 @@ struct TranscriptionManagerTests {
     func startTranscriptionIsNoOpWhileDeletingModels() async {
         let manager = TranscriptionManager()
         manager.addFiles([URL(fileURLWithPath: "/tmp/clip.mp3")])
-        manager.isDeletingModels = true
+        manager.deletion = .models
         // Guard returns before any WhisperKit/network work, so this stays hermetic.
         await manager.startTranscription()
         // Never advanced to .loadingModel, and the delete flag still holds.
@@ -368,10 +368,13 @@ struct TranscriptionManagerTests {
 
     @Test("deleteAllModels refuses while another deletion is already in progress")
     func deleteAllModelsRefusesWhileAlreadyDeleting() async {
+        // Injected ghost dir so even a regressed re-entrancy guard couldn't touch the real cache.
+        let ghost = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let manager = TranscriptionManager()
-        manager.isDeletingModels = true
+        manager.deletion = .models
         // Re-entrancy guard: returns before any filesystem work, so this stays hermetic.
-        let removed = await manager.deleteAllModels()
+        let removed = await manager.deleteAllModels(from: ghost)
         #expect(!removed)
         #expect(manager.isDeletingModels)
     }
@@ -380,7 +383,7 @@ struct TranscriptionManagerTests {
     func statusMessageReflectsDeletingFlag() {
         let manager = TranscriptionManager()
         manager.status = .completed   // an orthogonal session status the delete sits on top of
-        manager.isDeletingModels = true
+        manager.deletion = .models
         #expect(manager.statusMessage == "Deleting downloaded models...")
     }
 
@@ -530,11 +533,15 @@ struct TranscriptionManagerTests {
         let removed = await manager.removeAllAppData(appSupport: dir)
         #expect(removed)
         #expect(!FileManager.default.fileExists(atPath: dir.path))
-        // Assert against the same centralized key list the wipe iterates, so a new persisted
-        // key added to `Keys.all` is automatically covered here too.
-        for key in TranscriptionManager.Keys.all {
-            #expect(fixture.defaults.object(forKey: key) == nil)
-        }
+        // Assert each seeded key by name — NOT by looping `Keys.all`, which is circular: a key
+        // missing from `Keys.all` would be skipped by the wipe AND by the check, hiding the drift.
+        #expect(fixture.defaults.object(forKey: TranscriptionManager.Keys.model) == nil)
+        #expect(fixture.defaults.object(forKey: TranscriptionManager.Keys.language) == nil)
+        #expect(fixture.defaults.object(forKey: TranscriptionManager.Keys.task) == nil)
+        #expect(fixture.defaults.object(forKey: TranscriptionManager.Keys.temperature) == nil)
+        // Tripwire: adding a key to `Keys.all` fails this until the seeds + per-key assertions
+        // above are updated to match, so the wipe's coverage can't silently outgrow this test.
+        #expect(TranscriptionManager.Keys.all.count == 4)
     }
 
     @Test("removeAllAppData drops the loaded engine when the folder existed")
@@ -543,6 +550,7 @@ struct TranscriptionManagerTests {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try Data(repeating: 0xAB, count: 6_000).write(to: dir.appendingPathComponent("model.bin"))
+        defer { try? FileManager.default.removeItem(at: dir) }   // clean up if the wipe fails to
 
         // Isolated store: removeAllAppData clears the settings keys, and the unit-test host
         // shares the app's bundle id, so a `.standard`-backed manager would wipe the real ones.
@@ -598,10 +606,76 @@ struct TranscriptionManagerTests {
         let ghost = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let manager = ManagerFixture().makeManager()
-        manager.isDeletingModels = true
+        manager.deletion = .models
         let removed = await manager.removeAllAppData(appSupport: ghost)
         #expect(!removed)
         #expect(manager.isDeletingModels)
+    }
+
+    @Test("removeAllAppData toggles the busy-state off and leaves status untouched")
+    func removeAllAppDataFlagLifecycle() async throws {
+        // Guards against a stuck busy-state: if the wipe ever failed to clear `deletion`,
+        // `canTranscribe` would be false and every Storage button disabled forever.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 6_000).write(to: dir.appendingPathComponent("model.bin"))
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Isolated store: the wipe clears the settings keys, and the unit-test host shares the
+        // app's bundle id, so a `.standard`-backed manager would wipe the developer's real ones.
+        let manager = ManagerFixture().makeManager()
+        manager.status = .completed
+        #expect(!manager.isDeletingModels)
+
+        let removed = await manager.removeAllAppData(appSupport: dir)
+        #expect(removed)
+        #expect(!manager.isDeletingModels)      // toggled back off
+        #expect(manager.status == .completed)   // session status untouched — no restore dance
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
+    }
+
+    @Test("removeAllAppData drops the engine on a PARTIAL removal (contents gone, dir remains)")
+    func removeAllAppDataDropsEngineOnPartialRemoval() async throws {
+        // Same regression as deleteAllModels: `removeItem` recurses depth-first, so it can unlink
+        // the contents yet throw on the final node removal — `removed == false` while the folder is
+        // gutted. Keying the engine drop off *existence before* the attempt (not full removal) is
+        // the fix. Reproduced by making the target's PARENT read-only: the child `model.bin` is
+        // unlinked, but the final `rmdir` of the folder needs write on the parent and fails.
+        try #require(getuid() != 0)   // root bypasses perms → removal would fully succeed; skip.
+
+        let parent = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let dir = parent.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 6_000).write(to: dir.appendingPathComponent("model.bin"))
+        // Restore write perm before cleanup so the temp tree can be torn down.
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: parent.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: parent.path)
+            try? FileManager.default.removeItem(at: parent)
+        }
+
+        // Isolated store so clearing the settings keys never touches `.standard`.
+        let manager = ManagerFixture().makeManager()
+        manager.loadedModel = "openai_whisper-base"
+
+        let removed = await manager.removeAllAppData(appSupport: dir)
+        #expect(!removed)                        // final rmdir failed
+        #expect(manager.loadedModel == nil)      // engine dropped anyway — the fix
+        // Prove the "contents gone, dir remains" partial state the test name claims.
+        #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("model.bin").path))
+        #expect(FileManager.default.fileExists(atPath: dir.path))
+    }
+
+    @Test("statusMessage shows the wipe message whenever an app-data wipe is in flight")
+    func statusMessageReflectsWipe() {
+        // The wipe owns a distinct message from a models-only delete — no `.standard` mutation
+        // or filesystem work here, only a `deletion` set + `statusMessage` read (like its sibling).
+        let manager = TranscriptionManager()
+        manager.status = .completed   // an orthogonal session status the wipe sits on top of
+        manager.deletion = .allData
+        #expect(manager.statusMessage == "Removing all app data...")
     }
 
     @Test("modelCacheDirectory stays nested under appSupportDirectory")

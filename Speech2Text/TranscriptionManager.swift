@@ -243,7 +243,7 @@ class TranscriptionManager {
 
     /// The model id currently loaded into `whisperKit`, or `nil` when no engine is loaded.
     /// Internal set so tests can simulate a loaded engine; production writes it only in
-    /// `startTranscription` (on load) and `deleteAllModels` (reset after the cache is removed).
+    /// `startTranscription` (on load) and `wipeDirectory` (reset after a removal empties the cache).
     var loadedModel: String?
 
     /// The loaded WhisperKit instance, exposed only as an opaque object so tests
@@ -260,23 +260,43 @@ class TranscriptionManager {
         }
     }
 
-    /// Whether a model-cache deletion is in flight. The single source of truth for the
-    /// deletion busy-state — it drives both `canTranscribe` and the "Deleting…" display.
-    /// Deliberately **not** derived from `status`: "a transcription result" and "the cache
-    /// is being deleted" are orthogonal, and piggybacking on `status` let any status write
-    /// (e.g. `clearFiles()` → `.idle`) silently drop the guard mid-delete. Internal set so
-    /// tests can simulate the in-flight state; production mutates it only in `deleteAllModels`.
-    var isDeletingModels = false
+    /// Distinguishes the two destructive removals so the status display can name the right one:
+    /// a models-only delete vs the complete-uninstall wipe. Each case owns its user-facing message.
+    enum DeletionKind {
+        case models
+        case allData
+
+        var message: String {
+            switch self {
+            case .models: return "Deleting downloaded models..."
+            case .allData: return "Removing all app data..."
+            }
+        }
+    }
+
+    /// Which destructive removal is in flight, or `nil` when none is. The single source of truth for
+    /// the deletion busy-state — it drives `canTranscribe`, the `isDeletingModels` guard, and the
+    /// status display (each case owns its message). Deliberately **not** derived from `status`:
+    /// "a transcription result" and "a removal is running" are orthogonal, and piggybacking on
+    /// `status` let any status write (e.g. `clearFiles()` → `.idle`) silently drop the guard
+    /// mid-removal. Internal set so tests can simulate the in-flight state; production mutates it
+    /// only in `wipeDirectory`.
+    var deletion: DeletionKind?
+
+    /// Whether a destructive removal (model-cache delete or full app-data wipe) is in flight.
+    /// Computed from `deletion` so the many read-only call sites that only need the yes/no
+    /// busy-state — `canTranscribe` and the Storage buttons — stay unchanged.
+    var isDeletingModels: Bool { deletion != nil }
 
     var canTranscribe: Bool {
         !droppedFileURLs.isEmpty && !isProcessing && !isDeletingModels
     }
 
     var statusMessage: String {
-        // A delete overrides the session status in the display: it can run on top of any
+        // A removal overrides the session status in the display: it can run on top of any
         // status (e.g. a `.completed` result), and `status` is intentionally left untouched
-        // during the delete, so the flag — not the enum — owns the "Deleting…" message.
-        if isDeletingModels { return "Deleting downloaded models..." }
+        // during the removal, so `deletion` — not `status` — owns the in-progress message.
+        if let deletion { return deletion.message }
         switch status {
         case .idle: return ""
         case .loadingModel: return "Downloading and loading model (first time may take a while)..."
@@ -573,56 +593,59 @@ class TranscriptionManager {
         Self.cacheSize(of: Self.modelCacheDirectory)
     }
 
-    /// Delete all downloaded models, reporting whether the cache directory was *fully* removed.
-    /// Refuses (returns `false`) while a transcription is in flight — deleting model
-    /// files out from under a live `transcribe(...)` would corrupt the run — or while another
-    /// delete is already going. The in-memory engine is dropped (`whisperKit`/`loadedModel` reset)
-    /// whenever the cache **existed** before the attempt — not only on full success — because a
-    /// partial removal (children unlinked but final node removal failed) can still have deleted the
-    /// weight files, leaving a loaded engine pointing at missing files; keeping it would let the next
-    /// `startTranscription()` take the "already loaded" fast path against a gutted cache. Only a
-    /// genuine no-op delete (cache already absent) leaves a loaded engine alone. `status` is deliberately left untouched: deletion is an
-    /// orthogonal concern owned by `isDeletingModels`, which drives the display for the
-    /// whole delete regardless of what `status` holds. `directory` is injectable so the
-    /// removal can be unit-tested against a temp dir instead of the real cache.
-    @discardableResult
-    func deleteAllModels(from directory: URL = TranscriptionManager.modelCacheDirectory) async -> Bool {
-        guard !isProcessing, !isDeletingModels else { return false }
-        // Set the busy flag *synchronously*, before the first suspension, so a transcription
-        // started concurrently (also on the main actor) sees `canTranscribe == false` and
-        // can't begin reading/writing the directory while it is being removed. Because the
-        // flag is independent of `status`, a concurrent `clearFiles()` (→ `.idle`) can't
-        // drop the guard mid-delete. Cleared once the engine has been dropped.
-        isDeletingModels = true
-        // Offload the blocking `removeItem` off the @MainActor. Unlike the size walk
-        // (`currentCacheSize`, a structured nonisolated hop a superseded refresh can cancel),
-        // a destructive delete must run to completion — a half-removed cache is worse than a
-        // finished one — so it uses `Task.detached`, deliberately decoupled from caller
-        // cancellation. (`removeItem` isn't cancellation-aware anyway.)
+    /// Shared machinery for the two destructive removals (`deleteAllModels`, `removeAllAppData`).
+    /// Refuses (returns `nil`, nothing touched) while a transcription is in flight — removing files
+    /// out from under a live `transcribe(...)` would corrupt the run — or while another removal is
+    /// already going. Marks the busy-state (`deletion`) **synchronously** before the first
+    /// suspension, so a transcription started concurrently (also on the main actor) sees
+    /// `canTranscribe == false` and can't begin reading/writing the directory while it is being
+    /// removed; because `deletion` is independent of `status`, a concurrent `clearFiles()`
+    /// (→ `.idle`) can't drop the guard mid-removal. The blocking `removeItem` runs to completion
+    /// off the @MainActor via `Task.detached` — a half-removed tree is worse than a finished one,
+    /// and `removeItem` isn't cancellation-aware — capturing existence in the same hop. The
+    /// in-memory engine is dropped whenever the directory **existed** before the attempt (not only
+    /// on full success): a partial removal (children unlinked but the final node removal failed) can
+    /// still have deleted the weight files, leaving a loaded engine pointing at missing files, which
+    /// would let the next `startTranscription()` take the "already loaded" fast path against a gutted
+    /// cache. Only a genuine no-op (directory already absent) leaves a loaded engine alone. `status`
+    /// is deliberately left untouched: a removal is orthogonal, owned by `deletion`. Returns whether
+    /// the directory was *fully* removed — so Settings re-walks and surfaces residual bytes on a
+    /// partial failure rather than publishing 0 — or `nil` when the guard refused and nothing was
+    /// touched (distinct from `false`, a real attempt that didn't fully remove). `kind` selects the
+    /// status message shown for the duration.
+    private func wipeDirectory(_ directory: URL, kind: DeletionKind) async -> Bool? {
+        guard !isProcessing, deletion == nil else { return nil }
+        deletion = kind
         // Capture existence and remove in the same detached hop, so both stay off the @MainActor.
         let result = await Task.detached(priority: .utility) { () -> (existed: Bool, removed: Bool) in
             let existed = FileManager.default.fileExists(atPath: directory.path)
             return (existed, Self.deleteCache(at: directory))
         }.value
-        // Drop the in-memory engine whenever the cache existed before the attempt — even a partial
-        // removal may have unlinked the weight files, so a loaded engine is now stale. Only a true
-        // no-op delete (cache already absent) leaves it alone to avoid a needless reload/re-download.
+        // Drop the engine whenever the directory existed before the attempt — even a partial removal
+        // may have unlinked the weight files, so a loaded engine would now be stale.
         if result.existed {
             whisperKit = nil
             loadedModel = nil
         }
-        isDeletingModels = false
-        // Report *full* removal: on a partial failure the caller (Settings) re-walks and surfaces
-        // the residual leftover bytes rather than publishing 0.
+        deletion = nil
         return result.removed
+    }
+
+    /// Delete all downloaded models, reporting whether the cache directory was *fully* removed.
+    /// Thin wrapper over `wipeDirectory`: refuses (`false`) while a transcription or another removal
+    /// is in flight, drops the engine when the cache existed, and reports full removal so Settings
+    /// re-walks residual bytes on a partial failure. `directory` is injectable for hermetic tests.
+    @discardableResult
+    func deleteAllModels(from directory: URL = TranscriptionManager.modelCacheDirectory) async -> Bool {
+        await wipeDirectory(directory, kind: .models) ?? false
     }
 
     /// Complete-uninstall wipe: remove the **entire** app-owned Application Support folder
     /// (`appSupportDirectory`, which contains `models/` and any future app data) AND clear the
     /// persisted settings, returning whether the folder was fully removed. This is the in-app half of
     /// a graceful uninstall — macOS has no uninstaller hook and the app isn't sandboxed, so nothing is
-    /// reaped when it's trashed. Wider than `deleteAllModels` (which targets only `models/`); the two
-    /// share the same busy-flag/off-actor/engine-drop machinery.
+    /// reaped when it's trashed. Wider than `deleteAllModels` (which targets only `models/`); both
+    /// route the file removal through `wipeDirectory`.
     ///
     /// Settings are cleared through the injected `UserDefaults` (`removeObject`), NOT by deleting the
     /// `.plist` file: writes are mediated by `cfprefsd`, which would just re-materialize the file from
@@ -630,31 +653,20 @@ class TranscriptionManager {
     /// the app-hosted test process (never touching the developer's real `.standard` domain).
     /// `restoreDefaults()` is deliberately NOT called afterward — its `didSet` writers would
     /// immediately re-persist the keys just cleared. In-memory values are left as they are; a relaunch
-    /// loads the code defaults from the now-empty store. `appSupport` is injectable so the removal can
-    /// be unit-tested against a temp dir instead of the real folder.
+    /// loads the code defaults from the now-empty store. The settings clear runs after `wipeDirectory`
+    /// returns and is synchronous (no `await` before it), so it can't interleave with a concurrent
+    /// transcription; it still runs on a no-op removal (folder already absent) because settings live
+    /// independently of the folder. `appSupport` is injectable so the removal can be unit-tested
+    /// against a temp dir instead of the real folder.
     @discardableResult
     func removeAllAppData(appSupport: URL = TranscriptionManager.appSupportDirectory) async -> Bool {
-        // Reuse the deletion busy-state and its guards: refuse mid-transcription or mid-delete, and
-        // set the flag synchronously before the first suspension so a concurrent transcription sees
-        // `canTranscribe == false` and can't race the removal.
-        guard !isProcessing, !isDeletingModels else { return false }
-        isDeletingModels = true
-        // Off-actor, run-to-completion removal of the whole folder; capture existence in the same hop.
-        let result = await Task.detached(priority: .utility) { () -> (existed: Bool, removed: Bool) in
-            let existed = FileManager.default.fileExists(atPath: appSupport.path)
-            return (existed, Self.deleteCache(at: appSupport))
-        }.value
-        // Drop the live engine when the cache existed (same partial-removal rationale as deleteAllModels).
-        if result.existed {
-            whisperKit = nil
-            loadedModel = nil
-        }
+        // `nil` means the guard refused (mid-transcription/mid-removal) — leave settings intact.
+        guard let removed = await wipeDirectory(appSupport, kind: .allData) else { return false }
         // Clear the persisted settings through the API so cfprefsd actually drops them.
         for key in Keys.all {
             defaults.removeObject(forKey: key)
         }
-        isDeletingModels = false
-        return result.removed
+        return removed
     }
 }
 
