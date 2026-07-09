@@ -34,20 +34,21 @@ struct Speech2TextApp: App {
         }
         .defaultSize(width: 700, height: 700)
         .commands {
-            // Replace the default (help-book-less, and so broken) "Speech2Text Help" item with a
-            // guide to fully uninstalling the app — the app isn't sandboxed, so macOS reaps nothing
-            // when it's trashed. `openWindow` is available inside a `Commands` body via @Environment.
+            // Replace the default (help-book-less, and so broken) "Speech2Text Help" item with our
+            // in-app help book — a NavigationSplitView window documenting the app's features, with
+            // the full uninstall guide as its final topic. `openWindow` is available inside a
+            // `Commands` body via @Environment.
             CommandGroup(replacing: .help) {
-                UninstallHelpCommand()
+                HelpMenuCommand()
             }
         }
 
-        // Standalone window opened from Help ▸ Uninstalling Speech2Text…. Independent of the main
-        // window so it can stay open while the user follows its "Open Settings…" link to the wipe.
-        Window("Uninstalling Speech2Text", id: "uninstall") {
-            UninstallHelpView()
+        // The in-app help book, opened from Help ▸ Speech2Text Help. A standalone window so it can
+        // stay open alongside the main window (its Uninstalling topic links into Settings).
+        Window("Speech2Text Help", id: "help") {
+            HelpView()
         }
-        .defaultSize(width: 460, height: 520)
+        .defaultSize(width: 720, height: 520)
 
         Settings {
             SettingsView(manager: manager)
@@ -55,14 +56,15 @@ struct Speech2TextApp: App {
     }
 }
 
-/// The Help-menu item that opens the uninstall guide window. A dedicated `View` so it can pull
+/// The Help-menu item that opens the help book window. A dedicated `View` so it can pull
 /// `openWindow` from the environment (a bare closure in `.commands` can't).
-private struct UninstallHelpCommand: View {
+private struct HelpMenuCommand: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button("Uninstalling Speech2Text…") {
-            openWindow(id: "uninstall")
+        Button("Speech2Text Help") {
+            openWindow(id: "help")
         }
+        .keyboardShortcut("?", modifiers: .command)
     }
 }
