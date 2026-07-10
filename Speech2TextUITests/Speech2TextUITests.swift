@@ -143,4 +143,64 @@ final class Speech2TextUITests: XCTestCase {
         expectation(for: NSPredicate(format: "value == %@", "German"), evaluatedWith: picker)
         waitForExpectations(timeout: 5)
     }
+
+    // MARK: - Help book
+
+    /// Open Help ▸ Speech2Text Help from the menu bar and return the book window. Menu-bar and
+    /// second-window driving is new for this suite (every other test stays in the main window),
+    /// so it's centralized here.
+    private func openHelpBook(_ app: XCUIApplication) -> XCUIElement {
+        let helpMenu = app.menuBars.menuBarItems["Help"]
+        helpMenu.click()
+        // Scope the item lookup to the open Help menu. An unscoped `app.menuBars.menuItems[...]`
+        // matches the same item twice — the macOS menu bar is reachable via two accessibility-tree
+        // paths — and its `.firstMatch` can resolve to an off-screen phantom with an INFINITY frame
+        // that XCUITest refuses to click. Scoping under the (uniquely resolved) Help menu bar item
+        // yields the one real, hittable "Speech2Text Help" item.
+        helpMenu.menuItems["Speech2Text Help"].click()
+        let window = app.windows["Speech2Text Help"]
+        assertExists(window, timeout: 10)
+        return window
+    }
+
+    /// A help element addressed by accessibility identifier, matched regardless of the element
+    /// type it surfaces as: a macOS `List` row or a `ScrollView` can appear as a cell, static
+    /// text, or generic element — not necessarily a button — so a typed query (`app.buttons[...]`)
+    /// would silently miss it.
+    private func helpElement(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
+    func testHelpBookOpensFromMenuAndNavigatesTopics() {
+        let app = launchApp()
+        _ = openHelpBook(app)
+
+        // openSettingsLink lives only on the Uninstalling topic, so its presence/absence is a
+        // clean, type-agnostic signal for which detail pane is showing.
+        let settingsLink = helpElement(app, "openSettingsLink")
+
+        // The book opens on Overview (the default selection). Assert the Overview *detail* pane is
+        // showing — the sidebar row `helpTopic-overview` is present for every selection, so on its
+        // own it can't prove the default; `helpDetail-overview` (the detail pane's id) can. Also
+        // assert the uninstalling-only Settings link is absent.
+        assertExists(helpElement(app, "helpTopic-overview"), timeout: 10)
+        assertExists(helpElement(app, "helpDetail-overview"))
+        XCTAssertFalse(
+            settingsLink.exists,
+            "Open Settings link should only appear on the Uninstalling topic"
+        )
+
+        // Navigate to Uninstalling → its Settings link appears. Because that link is unique to
+        // the topic, its appearance proves the sidebar selection swapped the detail pane.
+        helpElement(app, "helpTopic-uninstalling").click()
+        assertExists(settingsLink)
+
+        // Navigate on to Models → the Uninstalling-only link disappears, proving the detail pane
+        // updates in both directions.
+        helpElement(app, "helpTopic-models").click()
+        XCTAssertTrue(
+            settingsLink.waitForNonExistence(timeout: 5),
+            "Open Settings link should disappear when leaving the Uninstalling topic"
+        )
+    }
 }
