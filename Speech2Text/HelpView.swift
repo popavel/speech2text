@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 // `DecodingTask` (the Transcribing topic's task list) is a WhisperKit type; `WhisperModel`,
 // the supported-format sets, and `bundleIdentifier` are app types and need no import. Matches
 // ContentView's `@preconcurrency` import so the Swift 6 strict-concurrency posture is consistent.
@@ -8,7 +9,7 @@ import SwiftUI
 
 /// A topic in the in-app help book. `CaseIterable` order is the sidebar order; `Uninstalling` is
 /// last because it's the end-of-life task (it absorbed the former standalone uninstall window).
-enum HelpTopic: String, CaseIterable, Identifiable, Hashable {
+enum HelpTopic: String, CaseIterable, Identifiable {
     case overview
     case addingFiles
     case languages
@@ -49,13 +50,16 @@ enum HelpTopic: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-/// The in-app help book, opened from Help ▸ Speech2Text Help (⌘?). A `NavigationSplitView` whose
+/// The in-app help book, opened from Help ▸ Speech2Text Help. A `NavigationSplitView` whose
 /// sidebar lists the `HelpTopic`s and whose detail renders the selected one. Replaces the former
 /// standalone "Uninstalling Speech2Text…" window — uninstalling is now this book's final topic.
 ///
-/// Every factual detail (supported formats, model names/sizes, task labels, the uninstall leftover
-/// paths) is derived from `TranscriptionManager`'s canonical `static` declarations so the
-/// documentation can't drift from the code it describes.
+/// Facts that can drift from the code are derived from `TranscriptionManager`'s canonical `static`
+/// declarations and are covered by `HelpViewTests`: supported formats, model display names and the
+/// default model, task labels, the storage/uninstall paths, the batch-run header, and the language
+/// count. The rest of the copy — keyboard shortcuts (⌘O/⌘⏎/⌘,) and the exact Settings button
+/// labels — is illustrative prose that is NOT derived, so a rebind or a control rename has to be
+/// mirrored here by hand.
 struct HelpView: View {
     @State private var selection: HelpTopic? = .overview
 
@@ -93,26 +97,21 @@ struct HelpDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text(topic.title)
                     .font(.title2).bold()
-                content
+                switch topic {
+                case .overview: overview
+                case .addingFiles: addingFiles
+                case .languages: languages
+                case .models: models
+                case .transcribing: transcribing
+                case .results: results
+                case .storage: storage
+                case .uninstalling: uninstalling
+                }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityIdentifier("helpDetail-\(topic.rawValue)")
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch topic {
-        case .overview: overview
-        case .addingFiles: addingFiles
-        case .languages: languages
-        case .models: models
-        case .transcribing: transcribing
-        case .results: results
-        case .storage: storage
-        case .uninstalling: uninstalling
-        }
     }
 
     // MARK: Topics
@@ -149,25 +148,19 @@ struct HelpDetailView: View {
             paragraph("Language defaults to Auto-detect, which lets the model infer the spoken "
                 + "language. To force a specific one, click the language button and use the search "
                 + "field — type part of a name and press Return to pick the top match.")
-            paragraph("The full Whisper language set (around 100 languages) is available.")
+            paragraph("The full Whisper language set (around \(Self.languageCount) languages) is "
+                + "available.")
         }
     }
 
     private var models: some View {
         VStack(alignment: .leading, spacing: 10) {
             paragraph("The model sets the balance of speed, accuracy, and download size. Larger "
-                + "models are more accurate but slower and use more disk space. Base is a good "
-                + "default.")
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(WhisperModel.allCases) { model in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text("•")
-                        // The display name (with its size) comes straight from WhisperModel so this
-                        // list can't advertise a model or size the app doesn't actually offer.
-                        Text(model.displayName)
-                    }
-                }
-            }
+                + "models are more accurate but slower and use more disk space. "
+                + "\(TranscriptionManager.Defaults.model.shortName) is a good default.")
+            // Display names (with their sizes) come straight from WhisperModel so this list can't
+            // advertise a model or size the app doesn't actually offer.
+            bulletList(WhisperModel.allCases.map(\.displayName))
             paragraph("A model downloads the first time you use it, which can take a while; after "
                 + "that it's cached and reused. Manage downloaded models in Settings ▸ Storage.")
         }
@@ -176,19 +169,13 @@ struct HelpDetailView: View {
     private var transcribing: some View {
         VStack(alignment: .leading, spacing: 10) {
             paragraph("Task controls what the model produces:")
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(DecodingTask.allCases, id: \.self) { task in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text("•")
-                        Text(task.displayName)
-                    }
-                }
-            }
+            bulletList(DecodingTask.allCases.map(\.displayName))
             paragraph("Under Advanced, Temperature trades determinism for variety — 0 is most "
                 + "accurate; higher values add randomness.")
             paragraph("Click Transcribe (⌘⏎) to start. The first run loads the model, and progress "
                 + "is shown as a percentage. When several files are queued, each file's text is "
-                + "preceded by a “--- filename ---” header.")
+                + "preceded by a “\(TranscriptionManager.batchHeader(forFileNamed: "filename"))” "
+                + "header.")
         }
     }
 
@@ -214,8 +201,7 @@ struct HelpDetailView: View {
                 labeledItem("Restore Default Settings",
                     "Resets task, language, model, and temperature.")
             }
-            paragraph("Models are stored under ~/Library/Application Support/"
-                + "\(TranscriptionManager.bundleIdentifier)/models.")
+            paragraph("Models are stored under \(Self.modelsPath).")
         }
     }
 
@@ -258,6 +244,19 @@ struct HelpDetailView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// A "• item" bulleted list of plain strings. Shared by the Models and Transcribing topics,
+    /// whose items are the canonical `WhisperModel` / `DecodingTask` display names.
+    private func bulletList(_ items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(items, id: \.self) { item in
+                HStack(alignment: .top, spacing: 6) {
+                    Text("•")
+                    Text(item)
+                }
+            }
+        }
+    }
+
     /// A bold term above a one-line description — used for the Settings control glossary.
     private func labeledItem(_ term: String, _ description: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -283,11 +282,22 @@ struct HelpDetailView: View {
     private static let videoExtensions =
         TranscriptionManager.supportedVideoExtensions.sorted().joined(separator: ", ")
 
-    /// What "Remove All App Data" wipes — the app-owned Application Support root. Its bundle-id
-    /// segment comes from the shared `TranscriptionManager.bundleIdentifier`, so a rename can't
-    /// leave the guide pointing at a stale folder.
+    /// Distinct spoken languages available — the count of unique language codes minus the
+    /// Auto-detect pseudo-entry (whose code is empty). Derived from the same `allCases` the picker
+    /// uses so the number can't drift from the actual language set.
+    private static let languageCount =
+        Set(TranscriptionLanguage.allCases.map(\.code)).count - 1
+
+    /// What "Remove All App Data" wipes — shown as the tilde-abbreviated path of the exact URL the
+    /// wipe removes (`TranscriptionManager.appSupportDirectory`), so the guide can't point at a
+    /// folder the app no longer uses.
     private static let appDataPath =
-        "~/Library/Application Support/\(TranscriptionManager.bundleIdentifier)"
+        (TranscriptionManager.appSupportDirectory.path as NSString).abbreviatingWithTildeInPath
+
+    /// Where downloaded models live — the tilde-abbreviated path of `modelCacheDirectory`, the same
+    /// URL WhisperKit downloads into, so the Storage topic stays in sync with the real cache.
+    private static let modelsPath =
+        (TranscriptionManager.modelCacheDirectory.path as NSString).abbreviatingWithTildeInPath
 
     /// OS-managed crumbs the in-app wipe can't reach (the prefs `.plist` survives because SwiftUI
     /// and cfprefsd keep re-materializing that domain), best removed manually after quitting.
@@ -304,8 +314,4 @@ struct HelpDetailView: View {
 
 #Preview("Help") {
     HelpView()
-}
-
-#Preview("Help — Uninstalling") {
-    HelpDetailView(topic: .uninstalling)
 }

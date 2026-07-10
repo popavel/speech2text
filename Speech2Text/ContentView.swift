@@ -586,7 +586,7 @@ struct SettingsView: View {
                 .disabled(manager.isProcessing || manager.isRemovingData || !hasCache)
                 .accessibilityIdentifier("deleteModelsButton")
 
-                Button("Remove All App Data…", role: .destructive) {
+                Button("Remove All App Data", role: .destructive) {
                     showWipeConfirmation = true
                 }
                 // No `hasCache` gate: settings persist even with an empty model cache, so the
