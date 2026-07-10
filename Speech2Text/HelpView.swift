@@ -192,7 +192,7 @@ struct HelpDetailView: View {
 
     private var storage: some View {
         VStack(alignment: .leading, spacing: 10) {
-            paragraph("Open Settings with ⌘, to manage what the app keeps on disk:")
+            paragraph("Open Settings with ⌘, to manage downloaded models and your saved settings:")
             VStack(alignment: .leading, spacing: 8) {
                 labeledItem("Downloaded models",
                     "Shows how much space cached models use.")

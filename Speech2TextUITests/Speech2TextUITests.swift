@@ -173,7 +173,7 @@ final class Speech2TextUITests: XCTestCase {
 
     func testHelpBookOpensFromMenuAndNavigatesTopics() {
         let app = launchApp()
-        _ = openHelpBook(app)
+        let helpWindow = openHelpBook(app)
 
         // openSettingsLink lives only on the Uninstalling topic, so its presence/absence is a
         // clean, type-agnostic signal for which detail pane is showing.
@@ -202,5 +202,8 @@ final class Speech2TextUITests: XCTestCase {
             settingsLink.waitForNonExistence(timeout: 5),
             "Open Settings link should disappear when leaving the Uninstalling topic"
         )
+
+        // Close the second window so state restoration can't carry it into a later test.
+        helpWindow.buttons[XCUIIdentifierCloseWindow].click()
     }
 }

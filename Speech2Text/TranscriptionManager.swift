@@ -90,8 +90,8 @@ enum WhisperModel: String, CaseIterable, Identifiable {
     /// The model's user-facing name in two parts, so `shortName` and `displayName` project from a
     /// single per-case source and can't drift. `short` is the bare name (used where prose names one
     /// model, e.g. the help book's "… is a good default"); `detail` is the parenthetical size/speed
-    /// note. Kept as one switch — the old parallel `displayName`/`shortName` switches had to be
-    /// edited in lockstep.
+    /// note. Kept as one switch rather than two parallel `shortName`/`displayName` switches that
+    /// could fall out of sync.
     private var nameParts: (short: String, detail: String) {
         switch self {
         case .tiny: return ("Tiny", "~75 MB, fastest")
