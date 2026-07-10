@@ -61,6 +61,11 @@ enum HelpTopic: String, CaseIterable, Identifiable {
 /// labels — is illustrative prose that is NOT derived, so a rebind or a control rename has to be
 /// mirrored here by hand.
 struct HelpView: View {
+    /// The help book's title — one source shared by the `Window` scene, the Help-menu item (both in
+    /// `Speech2TextApp`), and this view's `navigationTitle`, so they can't disagree. The XCUITest
+    /// pins the visible string independently (a separate target that can't reference this constant).
+    static let windowTitle = "Speech2Text Help"
+
     @State private var selection: HelpTopic? = .overview
 
     var body: some View {
@@ -82,7 +87,7 @@ struct HelpView: View {
             // so the detail pane always shows something.
             HelpDetailView(topic: selection ?? .overview)
         }
-        .navigationTitle("Speech2Text Help")
+        .navigationTitle(Self.windowTitle)
     }
 }
 
@@ -199,7 +204,8 @@ struct HelpDetailView: View {
                 labeledItem("Restore Default Settings",
                     "Resets task, language, model, and temperature.")
             }
-            paragraph("Models are stored under \(Self.modelsPath).")
+            paragraph("Models are stored under:")
+            pathRow(Self.modelsPath, identifier: "modelsPathRow")
         }
     }
 
@@ -264,11 +270,14 @@ struct HelpDetailView: View {
     }
 
     /// A copy-selectable, monospaced file path (matches the former UninstallHelpView styling).
-    private func pathRow(_ path: String) -> some View {
+    /// `identifier` gives a specific row an accessibility hook (the Storage topic's models path);
+    /// the Uninstalling topic's rows pass none, so they render unidentified as before.
+    private func pathRow(_ path: String, identifier: String? = nil) -> some View {
         Text(path)
             .font(.system(.callout, design: .monospaced))
             .textSelection(.enabled)
             .foregroundStyle(.secondary)
+            .accessibilityIdentifier(identifier ?? "")
     }
 
     // MARK: Derived content
