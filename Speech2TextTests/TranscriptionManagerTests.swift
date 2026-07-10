@@ -45,6 +45,17 @@ struct TranscriptionLanguageTests {
         #expect(TranscriptionLanguage.allCases.count == Constants.languages.count + 1)
     }
 
+    @Test("spokenLanguageCount is the distinct WhisperKit codes, excluding Auto-detect")
+    func spokenLanguageCountExcludesAuto() {
+        // Independent formulation from WhisperKit's raw name->code map (which has no Auto-detect entry),
+        // so this validates the exclude-Auto / dedupe-aliases rule instead of restating the property's
+        // own expression.
+        #expect(TranscriptionLanguage.spokenLanguageCount == Set(Constants.languages.values).count)
+        // Strictly fewer than allCases: Auto-detect is dropped (alias collapse only widens the gap).
+        #expect(TranscriptionLanguage.spokenLanguageCount < TranscriptionLanguage.allCases.count)
+        #expect(TranscriptionLanguage.spokenLanguageCount > 0)
+    }
+
     @Test("English resolves to a non-auto entry derived from WhisperKit")
     func englishIsDerivedFromWhisperKit() {
         #expect(TranscriptionLanguage.english != .auto)

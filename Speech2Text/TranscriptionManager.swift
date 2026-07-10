@@ -48,6 +48,14 @@ struct TranscriptionLanguage: Identifiable, Hashable, Sendable {
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return matching(query).first
     }
+
+    /// Number of distinct spoken languages offered: unique WhisperKit language codes, excluding the
+    /// Auto-detect pseudo-entry (whose code is ""). Aliases that share a code (e.g. "mandarin"/"chinese")
+    /// count once. Lives here — not in help copy — so the Auto-detect exclusion is unit-tested, matching
+    /// how `matching`/`submitSelection` keep language logic on the type.
+    static var spokenLanguageCount: Int {
+        Set(allCases.map(\.code)).subtracting([""]).count
+    }
 }
 
 // MARK: - Task
