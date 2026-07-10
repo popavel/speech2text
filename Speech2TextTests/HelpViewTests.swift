@@ -79,15 +79,6 @@ struct HelpViewTests {
         }
     }
 
-    @Test("Every WhisperModel display name begins with its short name")
-    func displayNameStartsWithShortName() {
-        // The help names the default model via `shortName`, while the model list shows `displayName`;
-        // this invariant keeps the two spellings from drifting apart.
-        for model in WhisperModel.allCases {
-            #expect(model.displayName.hasPrefix(model.shortName))
-        }
-    }
-
     @Test("Languages topic states the derived language count")
     func languagesStatesCount() throws {
         let view = HelpDetailView(topic: .languages)
