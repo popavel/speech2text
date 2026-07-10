@@ -62,9 +62,10 @@ private struct HelpMenuCommand: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        // No `.keyboardShortcut("?")`: macOS reserves ⌘? for the Help-menu search field it
+        // auto-inserts, which wins the key equivalent — a custom binding here is a dead key.
         Button("Speech2Text Help") {
             openWindow(id: "help")
         }
-        .keyboardShortcut("?", modifiers: .command)
     }
 }

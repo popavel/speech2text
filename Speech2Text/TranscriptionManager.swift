@@ -96,6 +96,20 @@ enum WhisperModel: String, CaseIterable, Identifiable {
         case .largeV3: return "Large V3 (~2.9 GB, most accurate)"
         }
     }
+
+    /// The model name without the size/speed note — used where prose names a single model (e.g.
+    /// the help book's "… is a good default"). `displayName` is `shortName` plus the
+    /// parenthetical detail, an invariant the HelpView tests assert via `hasPrefix` so the two
+    /// can't drift apart.
+    var shortName: String {
+        switch self {
+        case .tiny: return "Tiny"
+        case .base: return "Base"
+        case .small: return "Small"
+        case .largeTurbo: return "Large V3 Turbo"
+        case .largeV3: return "Large V3"
+        }
+    }
 }
 
 // MARK: - Status
@@ -414,7 +428,7 @@ class TranscriptionManager {
                 let text = Self.displayTranscript(joining: results.map(\.text))
 
                 if total > 1 {
-                    allText += "--- \(url.lastPathComponent) ---\n"
+                    allText += Self.batchHeader(forFileNamed: url.lastPathComponent) + "\n"
                 }
                 allText += text
                 allText += "\n\n"
@@ -464,6 +478,13 @@ class TranscriptionManager {
         let joined = segmentTexts.joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return joined.isEmpty ? noSpeechPlaceholder : joined
+    }
+
+    /// The separator header written before each file's transcript in a multi-file batch run
+    /// (emitted only when more than one file is queued). Extracted as `nonisolated static` so the
+    /// help book can document the exact format by calling it rather than restating the literal.
+    nonisolated static func batchHeader(forFileNamed name: String) -> String {
+        "--- \(name) ---"
     }
 
     // MARK: Audio Preparation

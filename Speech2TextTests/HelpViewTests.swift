@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import ViewInspector
+import WhisperKit
 
 @testable import Speech2Text
 
@@ -8,10 +9,13 @@ import ViewInspector
 // suite, all inspection is static: each assertion builds a fresh view and reads its rendered body,
 // so no ViewHosting / XCTest machinery is needed and the suite stays pure Swift Testing.
 //
-// The point of these tests is drift protection: the help copy is derived from
-// TranscriptionManager's canonical `static` declarations (supported formats, model names), so the
-// assertions recompute the expected strings from those same sources. If the app's supported
-// formats or model list change, the docs must change with them or these fail.
+// The point of these tests is drift protection: the help copy derives its factual claims from
+// TranscriptionManager's canonical `static` declarations (supported formats, model display names +
+// default, task labels, the storage/uninstall paths, the batch-run header, the language count), so
+// the assertions recompute the expected strings from those same sources. If any of those change,
+// the docs must change with them or these fail. (Keyboard shortcuts and the exact Settings button
+// labels are deliberately illustrative prose, not derived — see HelpView's doc comment — so they
+// are not asserted here.)
 @MainActor
 @Suite("HelpView")
 struct HelpViewTests {
@@ -49,11 +53,82 @@ struct HelpViewTests {
         }
     }
 
-    @Test("Overview topic names the app")
-    func overviewNamesApp() throws {
+    @Test("Overview topic describes what the app does")
+    func overviewDescribesApp() throws {
         let view = HelpDetailView(topic: .overview)
+        // A distinctive phrase, not just the bare app name (which could match any stray mention).
         #expect(throws: Never.self) {
-            try view.inspect().find(textWhere: { text, _ in text.contains("Speech2Text") })
+            try view.inspect().find(textWhere: { text, _ in
+                text.contains("transcribes audio and video to text entirely on your Mac")
+            })
+        }
+    }
+
+    @Test("Models topic recommends the canonical default model by name")
+    func modelsNamesDefault() throws {
+        let view = HelpDetailView(topic: .models)
+        let shortName = TranscriptionManager.Defaults.model.shortName
+        #expect(throws: Never.self) {
+            try view.inspect().find(textWhere: { text, _ in
+                text.contains("\(shortName) is a good default")
+            })
+        }
+    }
+
+    @Test("Every WhisperModel display name begins with its short name")
+    func displayNameStartsWithShortName() {
+        // The help names the default model via `shortName`, while the model list shows `displayName`;
+        // this invariant keeps the two spellings from drifting apart.
+        for model in WhisperModel.allCases {
+            #expect(model.displayName.hasPrefix(model.shortName))
+        }
+    }
+
+    @Test("Languages topic states the derived language count")
+    func languagesStatesCount() throws {
+        let view = HelpDetailView(topic: .languages)
+        let count = Set(TranscriptionLanguage.allCases.map(\.code)).count - 1
+        #expect(throws: Never.self) {
+            try view.inspect().find(textWhere: { text, _ in
+                text.contains("around \(count) languages")
+            })
+        }
+    }
+
+    @Test("Transcribing topic lists every task and documents the canonical batch header")
+    func transcribingListsTasksAndHeader() throws {
+        let view = HelpDetailView(topic: .transcribing)
+        for task in DecodingTask.allCases {
+            #expect(throws: Never.self) {
+                try view.inspect().find(text: task.displayName)
+            }
+        }
+        // The multi-file header is derived from the same helper the transcription loop emits.
+        let header = TranscriptionManager.batchHeader(forFileNamed: "filename")
+        #expect(throws: Never.self) {
+            try view.inspect().find(textWhere: { text, _ in text.contains(header) })
+        }
+    }
+
+    @Test("Results topic explains the editable box and export")
+    func resultsDescribesOutput() throws {
+        let view = HelpDetailView(topic: .results)
+        #expect(throws: Never.self) {
+            try view.inspect().find(textWhere: { text, _ in
+                text.contains("Copy places the full text on the clipboard")
+            })
+        }
+    }
+
+    @Test("Storage topic shows the derived model cache path")
+    func storageShowsModelPath() throws {
+        let view = HelpDetailView(topic: .storage)
+        // Recomputed from the same URL WhisperKit downloads into, so a cache-location change trips
+        // this rather than silently leaving the help pointing at a stale folder.
+        let modelsPath =
+            (TranscriptionManager.modelCacheDirectory.path as NSString).abbreviatingWithTildeInPath
+        #expect(throws: Never.self) {
+            try view.inspect().find(textWhere: { text, _ in text.contains(modelsPath) })
         }
     }
 
