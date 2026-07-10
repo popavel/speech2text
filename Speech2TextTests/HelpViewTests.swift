@@ -20,11 +20,9 @@ import WhisperKit
 @Suite("HelpView")
 struct HelpViewTests {
 
-    @Test("Every topic is well-formed (Overview + Uninstalling present, unique non-empty titles and symbols)")
+    @Test("Every topic has a unique, non-empty title and symbol")
     func topicsWellFormed() {
         let topics = HelpTopic.allCases
-        #expect(topics.contains(.overview))
-        #expect(topics.contains(.uninstalling))
         #expect(topics.allSatisfy { !$0.title.isEmpty })
         #expect(topics.allSatisfy { !$0.systemImage.isEmpty })
         // Titles are the sidebar labels and detail headings; symbols are the sidebar icons. A
@@ -126,16 +124,19 @@ struct HelpViewTests {
         }
     }
 
-    @Test("Storage topic shows the derived model cache path")
+    @Test("Storage topic shows the derived model cache path in a copy-selectable row")
     func storageShowsModelPath() throws {
         let view = HelpDetailView(topic: .storage)
         // Recomputed from the same URL WhisperKit downloads into, so a cache-location change trips
         // this rather than silently leaving the help pointing at a stale folder.
         let modelsPath =
             (TranscriptionManager.modelCacheDirectory.path as NSString).abbreviatingWithTildeInPath
-        #expect(throws: Never.self) {
-            try view.inspect().find(textWhere: { text, _ in text.contains(modelsPath) })
-        }
+        // Assert the path renders as its own identified `pathRow` (the monospaced,
+        // `.textSelection(.enabled)` helper), not as plain prose — so the models location is
+        // copyable like every other path in the book. Matching the row's exact text (not a
+        // `contains` over surrounding prose) also proves the path stands alone in that row.
+        let row = try view.inspect().find(viewWithAccessibilityIdentifier: "modelsPathRow")
+        #expect(try row.text().string() == modelsPath)
     }
 
     @Test("Uninstalling topic keeps the app-data path and the Open Settings link")

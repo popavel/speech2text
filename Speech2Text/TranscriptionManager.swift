@@ -87,29 +87,27 @@ enum WhisperModel: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var displayName: String {
+    /// The model's user-facing name in two parts, so `shortName` and `displayName` project from a
+    /// single per-case source and can't drift. `short` is the bare name (used where prose names one
+    /// model, e.g. the help book's "… is a good default"); `detail` is the parenthetical size/speed
+    /// note. Kept as one switch — the old parallel `displayName`/`shortName` switches had to be
+    /// edited in lockstep.
+    private var nameParts: (short: String, detail: String) {
         switch self {
-        case .tiny: return "Tiny (~75 MB, fastest)"
-        case .base: return "Base (~142 MB)"
-        case .small: return "Small (~466 MB)"
-        case .largeTurbo: return "Large V3 Turbo (~1.5 GB, fast)"
-        case .largeV3: return "Large V3 (~2.9 GB, most accurate)"
+        case .tiny: return ("Tiny", "~75 MB, fastest")
+        case .base: return ("Base", "~142 MB")
+        case .small: return ("Small", "~466 MB")
+        case .largeTurbo: return ("Large V3 Turbo", "~1.5 GB, fast")
+        case .largeV3: return ("Large V3", "~2.9 GB, most accurate")
         }
     }
 
-    /// The model name without the size/speed note — used where prose names a single model (e.g.
-    /// the help book's "… is a good default"). `displayName` is `shortName` plus the
-    /// parenthetical detail, an invariant the HelpView tests assert via `hasPrefix` so the two
-    /// can't drift apart.
-    var shortName: String {
-        switch self {
-        case .tiny: return "Tiny"
-        case .base: return "Base"
-        case .small: return "Small"
-        case .largeTurbo: return "Large V3 Turbo"
-        case .largeV3: return "Large V3"
-        }
-    }
+    /// The bare model name, without the size/speed note.
+    var shortName: String { nameParts.short }
+
+    /// The full picker label: the short name followed by its parenthetical detail. Composed from
+    /// `nameParts`, so it always begins with `shortName` by construction.
+    var displayName: String { "\(nameParts.short) (\(nameParts.detail))" }
 }
 
 // MARK: - Status
