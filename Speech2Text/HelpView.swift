@@ -65,8 +65,11 @@ struct HelpView: View {
                 ForEach(HelpTopic.allCases) { topic in
                     // `.tag(topic)` makes the selection value a `HelpTopic`, so `selection` can be a
                     // `HelpTopic?` (rather than the element's `id`) and drives the detail directly.
+                    // The identifier gives XCUITest a stable hook per row (titles like "Storage &
+                    // data" are brittle to match by text) — mirrors `helpDetail-<rawValue>`.
                     Label(topic.title, systemImage: topic.systemImage)
                         .tag(topic)
+                        .accessibilityIdentifier("helpTopic-\(topic.rawValue)")
                 }
             }
             .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
