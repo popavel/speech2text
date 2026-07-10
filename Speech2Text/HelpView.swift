@@ -132,10 +132,8 @@ struct HelpDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             paragraph("Add files two ways: drag them onto the window, or click Browse Files (⌘O) "
                 + "and choose one or more.")
-            Text("Supported audio: \(Self.audioExtensions)")
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Supported video: \(Self.videoExtensions)")
-                .fixedSize(horizontal: false, vertical: true)
+            paragraph("Supported audio: \(Self.audioExtensions)")
+            paragraph("Supported video: \(Self.videoExtensions)")
             paragraph("For video files the audio track is extracted automatically before "
                 + "transcription. You can queue several files at once; duplicates are ignored, and "
                 + "unsupported files are skipped with a warning instead of stopping the batch.")
