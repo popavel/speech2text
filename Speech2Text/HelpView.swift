@@ -1,5 +1,4 @@
 import SwiftUI
-import Foundation
 // `DecodingTask` (the Transcribing topic's task list) is a WhisperKit type; `WhisperModel`,
 // the supported-format sets, and `bundleIdentifier` are app types and need no import. Matches
 // ContentView's `@preconcurrency` import so the Swift 6 strict-concurrency posture is consistent.
