@@ -45,7 +45,7 @@ struct Speech2TextApp: App {
 
         // The in-app help book, opened from Help ▸ Speech2Text Help. A standalone window so it can
         // stay open alongside the main window (its Uninstalling topic links into Settings).
-        Window(HelpView.windowTitle, id: "help") {
+        Window(HelpView.windowTitle, id: HelpView.windowID) {
             HelpView()
         }
         .defaultSize(width: 720, height: 520)
@@ -65,7 +65,7 @@ private struct HelpMenuCommand: View {
         // No `.keyboardShortcut("?")`: macOS reserves ⌘? for the Help-menu search field it
         // auto-inserts, which wins the key equivalent — a custom binding here is a dead key.
         Button(HelpView.windowTitle) {
-            openWindow(id: "help")
+            openWindow(id: HelpView.windowID)
         }
     }
 }

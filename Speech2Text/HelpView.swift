@@ -65,6 +65,10 @@ struct HelpView: View {
     /// pins the visible string independently (a separate target that can't reference this constant).
     static let windowTitle = "Speech2Text Help"
 
+    /// The help book's window id — shared by the `Window` scene and the `openWindow` call in
+    /// `Speech2TextApp`, so they can't disagree (mirrors `windowTitle`).
+    static let windowID = "help"
+
     @State private var selection: HelpTopic? = .overview
 
     var body: some View {
@@ -150,8 +154,8 @@ struct HelpDetailView: View {
             paragraph("Language defaults to Auto-detect, which lets the model infer the spoken "
                 + "language. To force a specific one, click the language button and use the search "
                 + "field — type part of a name and press Return to pick the top match.")
-            paragraph("The full Whisper language set (around \(Self.languageCount) languages) is "
-                + "available.")
+            paragraph("The full Whisper language set (around "
+                + "\(TranscriptionLanguage.spokenLanguageCount) languages) is available.")
         }
     }
 
@@ -287,12 +291,6 @@ struct HelpDetailView: View {
         TranscriptionManager.supportedAudioExtensions.sorted().joined(separator: ", ")
     private static let videoExtensions =
         TranscriptionManager.supportedVideoExtensions.sorted().joined(separator: ", ")
-
-    /// Distinct spoken languages available — the count of unique language codes minus the
-    /// Auto-detect pseudo-entry (whose code is empty). Derived from the same `allCases` the picker
-    /// uses so the number can't drift from the actual language set.
-    private static let languageCount =
-        Set(TranscriptionLanguage.allCases.map(\.code)).count - 1
 
     /// What "Remove All App Data" wipes — shown as the tilde-abbreviated path of the exact URL the
     /// wipe removes (`TranscriptionManager.appSupportDirectory`), so the guide can't point at a

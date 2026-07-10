@@ -82,7 +82,10 @@ struct HelpViewTests {
     @Test("Languages topic states the derived language count")
     func languagesStatesCount() throws {
         let view = HelpDetailView(topic: .languages)
-        let count = Set(TranscriptionLanguage.allCases.map(\.code)).count - 1
+        // Assert the view renders the type's canonical count; the exclude-Auto / dedupe-aliases
+        // semantics of `spokenLanguageCount` are pinned separately in TranscriptionLanguageTests, so
+        // this is real drift protection rather than re-deriving the same formula the view uses.
+        let count = TranscriptionLanguage.spokenLanguageCount
         #expect(throws: Never.self) {
             try view.inspect().find(textWhere: { text, _ in
                 text.contains("around \(count) languages")
