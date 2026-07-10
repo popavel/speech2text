@@ -20,12 +20,18 @@ import WhisperKit
 @Suite("HelpView")
 struct HelpViewTests {
 
-    @Test("Every topic is well-formed (Overview + Uninstalling present, titles and symbols set)")
+    @Test("Every topic is well-formed (Overview + Uninstalling present, unique non-empty titles and symbols)")
     func topicsWellFormed() {
-        #expect(HelpTopic.allCases.contains(.overview))
-        #expect(HelpTopic.allCases.contains(.uninstalling))
-        #expect(HelpTopic.allCases.allSatisfy { !$0.title.isEmpty })
-        #expect(HelpTopic.allCases.allSatisfy { !$0.systemImage.isEmpty })
+        let topics = HelpTopic.allCases
+        #expect(topics.contains(.overview))
+        #expect(topics.contains(.uninstalling))
+        #expect(topics.allSatisfy { !$0.title.isEmpty })
+        #expect(topics.allSatisfy { !$0.systemImage.isEmpty })
+        // Titles are the sidebar labels and detail headings; symbols are the sidebar icons. A
+        // copy-paste slip giving two topics the same title or SF Symbol wouldn't surface in the
+        // XCUITest (which hooks rows by rawValue), so guard uniqueness here.
+        #expect(Set(topics.map(\.title)).count == topics.count)
+        #expect(Set(topics.map(\.systemImage)).count == topics.count)
     }
 
     @Test("Adding-files topic lists the canonical audio and video extensions")
@@ -135,12 +141,15 @@ struct HelpViewTests {
     @Test("Uninstalling topic keeps the app-data path and the Open Settings link")
     func uninstallingRetainsPathAndSettingsLink() throws {
         let view = HelpDetailView(topic: .uninstalling)
-        // The leftover path is derived from the shared bundle identifier — the same source the
-        // manager uses — so a rename can't leave the guide pointing at a stale folder.
+        // Match the app-data path row specifically — the one fact tying the guide to what "Remove
+        // All App Data" actually wipes — recomputed from the same appSupportDirectory HelpView
+        // derives it from. A bare bundle-id check wouldn't prove THIS row survived: the four
+        // systemPaths rows embed the id too, so deleting the app-data row would still pass. The
+        // abbreviated path still ends in bundleIdentifier, so rename-protection is retained.
+        let appDataPath =
+            (TranscriptionManager.appSupportDirectory.path as NSString).abbreviatingWithTildeInPath
         #expect(throws: Never.self) {
-            try view.inspect().find(textWhere: { text, _ in
-                text.contains(TranscriptionManager.bundleIdentifier)
-            })
+            try view.inspect().find(textWhere: { text, _ in text.contains(appDataPath) })
         }
         // The jump into Settings ▸ Storage (where the wipe lives) must survive the migration
         // out of the old standalone UninstallHelpView.
