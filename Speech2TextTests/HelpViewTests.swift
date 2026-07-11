@@ -153,14 +153,14 @@ struct HelpViewTests {
         let view = HelpDetailView(topic: .uninstalling)
         // Match the app-data path row specifically — the one fact tying the guide to what "Remove
         // All App Data" actually wipes — recomputed from the same appSupportDirectory HelpView
-        // derives it from. A bare bundle-id check wouldn't prove THIS row survived: the four
-        // systemPaths rows embed the id too, so deleting the app-data row would still pass. The
-        // abbreviated path still ends in bundleIdentifier, so rename-protection is retained.
+        // derives it from. Address it by its own `appDataPathRow` identifier (exact match, like
+        // storageShowsModelPath) rather than a substring scan: the four systemPaths rows embed the
+        // same bundle id, so a `contains` check couldn't prove THIS row survived. The abbreviated
+        // path still ends in bundleIdentifier, so rename-protection is retained.
         let appDataPath =
             (TranscriptionManager.appSupportDirectory.path as NSString).abbreviatingWithTildeInPath
-        #expect(throws: Never.self) {
-            try view.inspect().find(textWhere: { text, _ in text.contains(appDataPath) })
-        }
+        let row = try view.inspect().find(viewWithAccessibilityIdentifier: "appDataPathRow")
+        #expect(try row.text().string() == appDataPath)
         // The jump into Settings ▸ Storage (where the wipe lives) must survive the migration
         // out of the old standalone UninstallHelpView.
         #expect(throws: Never.self) {

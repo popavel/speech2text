@@ -218,7 +218,7 @@ struct HelpDetailView: View {
                     "Resets task, language, model, and temperature.")
             }
             paragraph("Models are stored under:")
-            pathRow(Self.modelsPath).accessibilityIdentifier("modelsPathRow")
+            pathRow(Self.modelsPath, id: "modelsPathRow")
         }
     }
 
@@ -227,11 +227,10 @@ struct HelpDetailView: View {
             paragraph("Speech2Text isn't sandboxed, so dragging it to the Trash leaves some data "
                 + "behind. Here's how to remove all of it.")
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("1. Remove the app's data").font(.headline)
+            step(1, "Remove the app's data") {
                 paragraph("Open Settings below, then click Remove All App Data and confirm. This "
                     + "deletes the downloaded models and clears your saved settings. It removes:")
-                pathRow(Self.appDataPath)
+                pathRow(Self.appDataPath, id: "appDataPathRow")
                 SettingsLink {
                     Text("Open Settings…")
                 }
@@ -239,13 +238,11 @@ struct HelpDetailView: View {
                 .padding(.top, 2)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("2. Quit and remove the app").font(.headline)
+            step(2, "Quit and remove the app") {
                 paragraph("Quit Speech2Text, then drag it from Applications to the Trash.")
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("3. (Optional) Remove leftover system files").font(.headline)
+            step(3, "(Optional) Remove leftover system files") {
                 paragraph("After quitting, macOS may keep these small files. Delete them for a "
                     + "completely clean removal:")
                 ForEach(Self.systemPaths, id: \.self) { pathRow($0) }
@@ -274,6 +271,15 @@ struct HelpDetailView: View {
         }
     }
 
+    /// A numbered step in the Uninstalling walkthrough: a bold "N. Title" headline above its
+    /// content. Extracted so the three (and any future) steps share one shape.
+    private func step(_ number: Int, _ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("\(number). \(title)").font(.headline)
+            content()
+        }
+    }
+
     /// A bold term above a one-line description — used for the Settings control glossary.
     private func labeledItem(_ term: String, _ description: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -283,13 +289,15 @@ struct HelpDetailView: View {
     }
 
     /// A copy-selectable, monospaced file path (matches the former UninstallHelpView styling).
-    /// Callers that need an accessibility hook (the Storage topic's models path) attach one at the
-    /// call site; the Uninstalling topic's rows render unidentified, as before.
-    private func pathRow(_ path: String) -> some View {
+    /// Pass `id` to attach a stable accessibility hook so a specific row can be asserted by exact
+    /// identifier (Storage's models path, Uninstalling's app-data path); rows without one (the four
+    /// systemPaths crumbs) render unidentified. An empty identifier is equivalent to none.
+    private func pathRow(_ path: String, id: String? = nil) -> some View {
         Text(path)
             .font(.system(.callout, design: .monospaced))
             .textSelection(.enabled)
             .foregroundStyle(.secondary)
+            .accessibilityIdentifier(id ?? "")
     }
 
     // MARK: Derived content
@@ -307,16 +315,19 @@ struct HelpDetailView: View {
     private static let modelNames = WhisperModel.allCases.map(\.displayName)
     private static let taskNames = DecodingTask.allCases.map(\.displayName)
 
+    /// Tilde-abbreviated display form of an app-owned URL (e.g. `~/Library/Application Support/…`).
+    private static func abbreviated(_ url: URL) -> String {
+        (url.path as NSString).abbreviatingWithTildeInPath
+    }
+
     /// What "Remove All App Data" wipes — shown as the tilde-abbreviated path of the exact URL the
     /// wipe removes (`TranscriptionManager.appSupportDirectory`), so the guide can't point at a
     /// folder the app no longer uses.
-    private static let appDataPath =
-        (TranscriptionManager.appSupportDirectory.path as NSString).abbreviatingWithTildeInPath
+    private static let appDataPath = abbreviated(TranscriptionManager.appSupportDirectory)
 
     /// Where downloaded models live — the tilde-abbreviated path of `modelCacheDirectory`, the same
     /// URL WhisperKit downloads into, so the Storage topic stays in sync with the real cache.
-    private static let modelsPath =
-        (TranscriptionManager.modelCacheDirectory.path as NSString).abbreviatingWithTildeInPath
+    private static let modelsPath = abbreviated(TranscriptionManager.modelCacheDirectory)
 
     /// OS-managed crumbs the in-app wipe can't reach (the prefs `.plist` survives because SwiftUI
     /// and cfprefsd keep re-materializing that domain), best removed manually after quitting.
