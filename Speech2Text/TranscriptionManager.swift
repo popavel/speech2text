@@ -53,9 +53,7 @@ struct TranscriptionLanguage: Identifiable, Hashable, Sendable {
     /// Auto-detect pseudo-entry (whose code is ""). Aliases that share a code (e.g. "mandarin"/"chinese")
     /// count once. Lives here — not in help copy — so the Auto-detect exclusion is unit-tested, matching
     /// how `matching`/`submitSelection` keep language logic on the type.
-    static var spokenLanguageCount: Int {
-        Set(allCases.map(\.code)).subtracting([""]).count
-    }
+    static let spokenLanguageCount: Int = Set(allCases.map(\.code)).subtracting([""]).count
 }
 
 // MARK: - Task

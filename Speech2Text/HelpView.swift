@@ -178,10 +178,10 @@ struct HelpDetailView: View {
             bulletList(DecodingTask.allCases.map(\.displayName))
             paragraph("Under Advanced, Temperature trades determinism for variety — 0 is most "
                 + "accurate; higher values add randomness.")
-            paragraph("Click Transcribe (⌘⏎) to start. The first run loads the model, and progress "
-                + "is shown as a percentage. When several files are queued, each file's text is "
-                + "preceded by a “\(TranscriptionManager.batchHeader(forFileNamed: "filename"))” "
-                + "header.")
+            paragraph("Click Transcribe (⌘⏎) to start. The first run loads the model, which can "
+                + "take a moment. When several files are queued they’re processed in turn and the "
+                + "progress bar advances as each one finishes; each file’s text is preceded by a "
+                + "“\(TranscriptionManager.batchHeader(forFileNamed: "filename"))” header.")
         }
     }
 
@@ -208,7 +208,7 @@ struct HelpDetailView: View {
                     "Resets task, language, model, and temperature.")
             }
             paragraph("Models are stored under:")
-            pathRow(Self.modelsPath, identifier: "modelsPathRow")
+            pathRow(Self.modelsPath).accessibilityIdentifier("modelsPathRow")
         }
     }
 
@@ -273,14 +273,13 @@ struct HelpDetailView: View {
     }
 
     /// A copy-selectable, monospaced file path (matches the former UninstallHelpView styling).
-    /// `identifier` gives a specific row an accessibility hook (the Storage topic's models path);
-    /// the Uninstalling topic's rows pass none, so they render unidentified as before.
-    private func pathRow(_ path: String, identifier: String? = nil) -> some View {
+    /// Callers that need an accessibility hook (the Storage topic's models path) attach one at the
+    /// call site; the Uninstalling topic's rows render unidentified, as before.
+    private func pathRow(_ path: String) -> some View {
         Text(path)
             .font(.system(.callout, design: .monospaced))
             .textSelection(.enabled)
             .foregroundStyle(.secondary)
-            .accessibilityIdentifier(identifier ?? "")
     }
 
     // MARK: Derived content
