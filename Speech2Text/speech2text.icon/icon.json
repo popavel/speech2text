@@ -6,22 +6,9 @@
     {
       "layers" : [
         {
-          "blend-mode-specializations" : [
-            {
-              "appearance" : "dark",
-              "value" : "screen"
-            }
-          ],
-          "fill-specializations" : [
-            {
-              "appearance" : "dark",
-              "value" : "none"
-            }
-          ],
-          "glass" : true,
-          "hidden" : false,
-          "image-name" : "Speech2Text-S2T 2.svg",
-          "name" : "Speech2Text-S2T 2"
+          "glass" : false,
+          "image-name" : "speech2text.svg",
+          "name" : "speech2text"
         }
       ],
       "shadow" : {
