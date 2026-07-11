@@ -31,7 +31,7 @@ struct AboutViewTests {
         // (which may be reworded) doesn't have to match exactly.
         #expect(throws: Never.self) {
             try view.inspect().find(textWhere: { text, _ in
-                text.contains("Your files never leave your computer")
+                text.contains("entirely on your Mac")
             })
         }
     }
