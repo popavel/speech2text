@@ -21,6 +21,20 @@ final class Speech2TextUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    override func tearDown() {
+        // Terminate the app after every test — pass or fail. The help book is a second, restorable
+        // `Window`; if a test opens it and then fails before closing it (continueAfterFailure = false
+        // aborts at the first failed assertion), the window would otherwise be left open and could be
+        // restored into the next test, which assumes a single main window. Terminating here kills any
+        // such window regardless of the failure path. (`terminate()` is a no-op if nothing is running,
+        // and abnormal termination doesn't persist window state — so nothing is restored on relaunch.)
+        // Suppressing restoration via `-NSQuitAlwaysKeepsWindows NO` / `-ApplePersistenceIgnoreState`
+        // launch args was tried instead, but those prevent this SwiftUI app's main window from
+        // appearing at all.
+        XCUIApplication().terminate()
+        super.tearDown()
+    }
+
     /// Wait for `element` to register in the accessibility tree, then assert it did.
     /// `waitForExistence` returns immediately if the element is already present, so
     /// this is also safe for siblings that render in the same body update.
@@ -42,6 +56,8 @@ final class Speech2TextUITests: XCTestCase {
         let app = XCUIApplication()
         // Sentinel consumed by TranscriptionManager.applyUITestSeamIfPresent(); the
         // string must match the guard there (Speech2Text/TranscriptionManager.swift).
+        // (Window-restoration hygiene for the help book's second window is handled by
+        // terminating the app in tearDown — see there.)
         app.launchArguments = ["-uiTesting"]
         if !preloadFiles.isEmpty {
             app.launchEnvironment["UITEST_PRELOAD_FILES"] = preloadFiles.joined(separator: "\n")
@@ -161,7 +177,11 @@ final class Speech2TextUITests: XCTestCase {
         // paths — and its `.firstMatch` can resolve to an off-screen phantom with an INFINITY frame
         // that XCUITest refuses to click. Scoping under the (uniquely resolved) Help menu bar item
         // yields the one real, hittable "Speech2Text Help" item.
-        helpMenu.menuItems["Speech2Text Help"].click()
+        let helpItem = helpMenu.menuItems["Speech2Text Help"]
+        // Wait for the menu to populate before clicking — `.click()` doesn't wait for existence, and
+        // the menu items may not be in the a11y tree the instant the menu opens on a cold runner.
+        assertExists(helpItem)
+        helpItem.click()
         let window = app.windows["Speech2Text Help"]
         assertExists(window, timeout: 10)
         return window
@@ -197,12 +217,16 @@ final class Speech2TextUITests: XCTestCase {
 
         // Navigate to Uninstalling → its Settings link appears. Because that link is unique to
         // the topic, its appearance proves the sidebar selection swapped the detail pane.
-        helpElement(helpWindow, "helpTopic-uninstalling").click()
+        let uninstallingRow = helpElement(helpWindow, "helpTopic-uninstalling")
+        assertExists(uninstallingRow)
+        uninstallingRow.click()
         assertExists(settingsLink)
 
         // Navigate on to Models → the Uninstalling-only link disappears, proving the detail pane
         // updates in both directions.
-        helpElement(helpWindow, "helpTopic-models").click()
+        let modelsRow = helpElement(helpWindow, "helpTopic-models")
+        assertExists(modelsRow)
+        modelsRow.click()
         XCTAssertTrue(
             settingsLink.waitForNonExistence(timeout: 5),
             "Open Settings link should disappear when leaving the Uninstalling topic"
