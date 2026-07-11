@@ -34,6 +34,12 @@ struct Speech2TextApp: App {
         }
         .defaultSize(width: 700, height: 700)
         .commands {
+            // Replace the standard "About Speech2Text" app-menu item (whose stock panel shows
+            // almost nothing — the shipped bundle carried no version string) with our own About
+            // window. `openWindow` is reached the same way as Help, via a dedicated command `View`.
+            CommandGroup(replacing: .appInfo) {
+                AboutMenuCommand()
+            }
             // Replace the default (help-book-less, and so broken) "Speech2Text Help" item with our
             // in-app help book — a NavigationSplitView window documenting the app's features, with
             // the full uninstall guide as its final topic. `openWindow` is available inside a
@@ -42,6 +48,15 @@ struct Speech2TextApp: App {
                 HelpMenuCommand()
             }
         }
+
+        // The About panel, opened from the app menu ▸ About Speech2Text. A single-instance `Window`
+        // (like Help) so re-choosing the menu item brings the same panel forward rather than
+        // spawning a second; `.contentSize` resizability gives it the tight, non-resizable feel of
+        // the stock About panel.
+        Window(AboutView.windowTitle, id: AboutView.windowID) {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
 
         // The in-app help book, opened from Help ▸ Speech2Text Help. A standalone window so it can
         // stay open alongside the main window (its Uninstalling topic links into Settings).
@@ -66,6 +81,18 @@ private struct HelpMenuCommand: View {
         // auto-inserts, which wins the key equivalent — a custom binding here is a dead key.
         Button(HelpView.windowTitle) {
             openWindow(id: HelpView.windowID)
+        }
+    }
+}
+
+/// The app-menu item that opens the About panel. A dedicated `View` (like `HelpMenuCommand`) so it
+/// can pull `openWindow` from the environment — a bare closure in `.commands` can't.
+private struct AboutMenuCommand: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button(AboutView.windowTitle) {
+            openWindow(id: AboutView.windowID)
         }
     }
 }
