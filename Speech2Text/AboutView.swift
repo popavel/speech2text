@@ -43,8 +43,7 @@ struct AboutView: View {
             }
 
             Text("Speech2Text transcribes audio and video to text entirely on your Mac, using "
-                + "OpenAI's Whisper models running locally through WhisperKit. Your files never "
-                + "leave your computer.")
+                + "OpenAI's Whisper models running locally through WhisperKit.")
                 .font(.callout)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -74,6 +73,10 @@ struct AboutView: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            // Without this the longest credit (swift-transformers) exceeds the panel's fixed 380pt
+            // width and truncates with "…"; let it wrap to a second line instead, matching how the
+            // description paragraph above handles its own width.
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(24)
