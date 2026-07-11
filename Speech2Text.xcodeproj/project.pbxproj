@@ -31,6 +31,7 @@
 		C54A594EB348E23685BFDDD8 /* ViewInspector in Frameworks */ = {isa = PBXBuildFile; productRef = 997B7883B0EAB1415BF30DC3 /* ViewInspector */; };
 		C7951CBF981C5F6CA2D7A569 /* Speech2TextUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F92F7F9BC61D6125C150C18 /* Speech2TextUITests.swift */; };
 		CA01503AA66EAF3D136876CA /* ContentViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 420FFF7A6196DB12A7DF261F /* ContentViewTests.swift */; };
+		DE5255BCCCFE0C72E9AA5068 /* speech2text.icon in Resources */ = {isa = PBXBuildFile; fileRef = F1DD8ED4D3D65D9960CBDC61 /* speech2text.icon */; };
 		EDB380633EF878B714232F62 /* tone.ogg in Resources */ = {isa = PBXBuildFile; fileRef = F6A7DFD12EDE8C2B45A474B1 /* tone.ogg */; };
 /* End PBXBuildFile section */
 
@@ -83,6 +84,7 @@
 		D8F43B79E773620F782E9404 /* HelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpView.swift; sourceTree = "<group>"; };
 		DEBD1E9C7CDCE059D602F705 /* Speech2TextIntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Speech2TextIntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E84E2174D83A011D947F5920 /* DecodingParametersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodingParametersTests.swift; sourceTree = "<group>"; };
+		F1DD8ED4D3D65D9960CBDC61 /* speech2text.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = speech2text.icon; sourceTree = "<group>"; };
 		F6A7DFD12EDE8C2B45A474B1 /* tone.ogg */ = {isa = PBXFileReference; path = tone.ogg; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -188,6 +190,7 @@
 				03DEF1325B925039091B4A9E /* AboutView.swift */,
 				21AB074AFFC5D1AD1EE56710 /* ContentView.swift */,
 				D8F43B79E773620F782E9404 /* HelpView.swift */,
+				F1DD8ED4D3D65D9960CBDC61 /* speech2text.icon */,
 				0550083328F5CD9C15E2E33D /* Speech2TextApp.swift */,
 				18BC5C2C8E4D6DFCEC77E399 /* TranscriptionManager.swift */,
 			);
@@ -222,6 +225,7 @@
 			buildConfigurationList = F0E45919DB8A76A8435D7B8E /* Build configuration list for PBXNativeTarget "Speech2Text" */;
 			buildPhases = (
 				E257996FA55769636ACB13E4 /* Sources */,
+				F7D01FD32F65C22F9DB49A5E /* Resources */,
 				A819118CC67CDB8696B60A81 /* Frameworks */,
 			);
 			buildRules = (
@@ -324,6 +328,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F7D01FD32F65C22F9DB49A5E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DE5255BCCCFE0C72E9AA5068 /* speech2text.icon in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -417,7 +429,7 @@
 		2D1A31AA90743FC2565BBBC6 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = speech2text;
 				CODE_SIGN_ENTITLEMENTS = Speech2Text.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -436,7 +448,7 @@
 		2DD285E4FEB695BF8E9D9A76 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = speech2text;
 				CODE_SIGN_ENTITLEMENTS = Speech2Text.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
