@@ -56,9 +56,14 @@ enum HelpTopic: String, CaseIterable, Identifiable {
 /// Facts that can drift from the code are derived from `TranscriptionManager`'s canonical `static`
 /// declarations and are covered by `HelpViewTests`: supported formats, model display names and the
 /// default model, task labels, the storage/uninstall paths, the batch-run header, and the language
-/// count. The rest of the copy — keyboard shortcuts (⌘O/⌘⏎/⌘,) and the exact Settings button
-/// labels — is illustrative prose that is NOT derived, so a rebind or a control rename has to be
-/// mirrored here by hand.
+/// count. The rest of the copy is illustrative prose that is NOT derived, so a rebind or a control
+/// rename has to be mirrored here by hand. That non-derived surface is every keyboard shortcut
+/// (⌘O/⌘⏎/⌘,) and every ContentView control label named in the text — e.g. the Settings labels
+/// ("Downloaded models", "Delete Downloaded Models", "Remove All App Data", "Restore Default
+/// Settings"), the main-window controls ("Browse Files", "Clear All", "Task", "Advanced",
+/// "Temperature", "Transcribe", "Copy", "Export .txt"), "Auto-detect", and the "Storage" section.
+/// Renaming any of these in `ContentView` builds green and passes tests while leaving the help book
+/// misdescribing the UI.
 struct HelpView: View {
     /// The help book's title — one source shared by the `Window` scene, the Help-menu item (both in
     /// `Speech2TextApp`), and this view's `navigationTitle`, so they can't disagree. The XCUITest
@@ -166,7 +171,7 @@ struct HelpDetailView: View {
                 + "\(TranscriptionManager.Defaults.model.shortName) is a good default.")
             // Display names (with their sizes) come straight from WhisperModel so this list can't
             // advertise a model or size the app doesn't actually offer.
-            bulletList(WhisperModel.allCases.map(\.displayName))
+            bulletList(Self.modelNames)
             paragraph("A model downloads the first time you use it, which can take a while; after "
                 + "that it's cached and reused. Manage downloaded models in Settings ▸ Storage.")
         }
@@ -175,7 +180,7 @@ struct HelpDetailView: View {
     private var transcribing: some View {
         VStack(alignment: .leading, spacing: 10) {
             paragraph("Task controls what the model produces:")
-            bulletList(DecodingTask.allCases.map(\.displayName))
+            bulletList(Self.taskNames)
             paragraph("Under Advanced, Temperature trades determinism for variety — 0 is most "
                 + "accurate; higher values add randomness.")
             paragraph("Click Transcribe (⌘⏎) to start. The first run loads the model, which can "
@@ -290,6 +295,12 @@ struct HelpDetailView: View {
         TranscriptionManager.supportedAudioExtensions.sorted().joined(separator: ", ")
     private static let videoExtensions =
         TranscriptionManager.supportedVideoExtensions.sorted().joined(separator: ", ")
+
+    // Canonical model/task labels, computed once (mirrors the extension strings above rather than
+    // rebuilding the array on every render of the Models / Transcribing panes). The render tests
+    // recompute these from the same `allCases.map(\.displayName)` so documentation drift still trips.
+    private static let modelNames = WhisperModel.allCases.map(\.displayName)
+    private static let taskNames = DecodingTask.allCases.map(\.displayName)
 
     /// What "Remove All App Data" wipes — shown as the tilde-abbreviated path of the exact URL the
     /// wipe removes (`TranscriptionManager.appSupportDirectory`), so the guide can't point at a

@@ -151,6 +151,10 @@ final class Speech2TextUITests: XCTestCase {
     /// so it's centralized here.
     private func openHelpBook(_ app: XCUIApplication) -> XCUIElement {
         let helpMenu = app.menuBars.menuBarItems["Help"]
+        // Wait for the menu bar to populate before clicking — `.click()` snapshots the a11y tree
+        // at call time and doesn't wait for existence, so on a cold/loaded runner the item may not
+        // be there the instant `app.launch()` returns. Matches the suite's assertExists-first pattern.
+        assertExists(helpMenu, timeout: 10)
         helpMenu.click()
         // Scope the item lookup to the open Help menu. An unscoped `app.menuBars.menuItems[...]`
         // matches the same item twice — the macOS menu bar is reachable via two accessibility-tree
