@@ -9,13 +9,17 @@ import WhisperKit
 // suite, all inspection is static: each assertion builds a fresh view and reads its rendered body,
 // so no ViewHosting / XCTest machinery is needed and the suite stays pure Swift Testing.
 //
-// The point of these tests is drift protection: the help copy derives its factual claims from
+// The point of these tests is wiring protection: the help copy DERIVES its factual claims from
 // TranscriptionManager's canonical `static` declarations (supported formats, model display names +
-// default, task labels, the storage/uninstall paths, the batch-run header, the language count), so
-// the assertions recompute the expected strings from those same sources. If any of those change,
-// the docs must change with them or these fail. (Keyboard shortcuts and the exact Settings button
-// labels are deliberately illustrative prose, not derived — see HelpView's doc comment — so they
-// are not asserted here.)
+// default, task labels, the storage/uninstall paths, the batch-run header, the language count), and
+// each assertion recomputes the expected string from that same source. Because both sides derive
+// from one source, a content change (a new format, a re-worded size) propagates to the copy AND the
+// expectation together, so these can't catch a wording change — nor do they need to. What they
+// pin is that the help copy stays *wired to* the canonical source: if a topic were changed to
+// hard-code a literal instead of interpolating the derived value, the rendered text would stop
+// matching the recomputed expectation and the test would fail. (Keyboard shortcuts and the exact
+// Settings button labels are deliberately illustrative prose, not derived — see HelpView's doc
+// comment; their drift is guarded separately by `labelsAppearInBothUIAndHelp` below.)
 @MainActor
 @Suite("HelpView")
 struct HelpViewTests {
@@ -37,8 +41,10 @@ struct HelpViewTests {
         let view = HelpDetailView(topic: .addingFiles)
         let audio = TranscriptionManager.supportedAudioExtensions.sorted().joined(separator: ", ")
         let video = TranscriptionManager.supportedVideoExtensions.sorted().joined(separator: ", ")
-        // Exact-match the full rendered line so a format added to the manager but not documented
-        // (or vice versa) trips this test rather than silently drifting.
+        // Exact-match the full rendered line to pin that the copy stays wired to the canonical sets:
+        // the help interpolates the same `sorted().joined(", ")` we recompute here, so a change to a
+        // supported set propagates to both sides at once (this can't catch a wording change) — but if
+        // the topic were switched to a hard-coded format list, the rendered line would stop matching.
         #expect(throws: Never.self) {
             try view.inspect().find(text: "Supported audio: \(audio)")
         }
@@ -165,6 +171,99 @@ struct HelpViewTests {
         // out of the old standalone UninstallHelpView.
         #expect(throws: Never.self) {
             try view.inspect().find(viewWithAccessibilityIdentifier: "openSettingsLink")
+        }
+    }
+
+    // MARK: - Container wiring (HelpView)
+
+    // The tests above inspect `HelpDetailView(topic:)` directly; this covers the one piece of the
+    // `HelpView` container that a fast in-process test can reach: the detail-topic fallback.
+    //
+    // The container's *rendering* (sidebar rows and which detail pane is shown) is NOT inspectable
+    // here: ViewInspector 0.10.3 can't unwrap a custom view whose body is a 2-column
+    // `NavigationSplitView(sidebar:detail:)` — every traversal (generic `find`, `navigationSplitView()`,
+    // `find(NavigationSplitView.self)`) throws "does not have 'content' attribute" because its child
+    // extraction expects the 3-column `content` column. Reshaping production purely to satisfy the
+    // test isn't worth it, so the sidebar `helpTopic-*` rows and the default `helpDetail-overview`
+    // pane stay covered by the XCUITest (`testHelpBookOpensFromMenuAndNavigatesTopics`), which drives
+    // the real container. What we CAN pin in-process is the pure fallback the detail slot depends on.
+
+    @Test("detailTopic falls back to Overview only when the selection is nil")
+    func detailTopicFallback() {
+        // The nil case is the transient sidebar-deselect path that static ViewInspection can't reach
+        // (it always reads the `.overview` @State seed). Pin the pure helper directly so a regression
+        // — e.g. force-unwrapping the selection — fails this fast suite instead of only the XCUITest.
+        #expect(HelpView.detailTopic(nil) == .overview)
+        #expect(HelpView.detailTopic(.models) == .models)
+        #expect(HelpView.detailTopic(.uninstalling) == .uninstalling)
+    }
+
+    @Test("Detail ScrollView is identified per topic so scroll offset resets on switch")
+    func detailScrollViewIsIdentifiedPerTopic() throws {
+        // `.id(topic)` gives the ScrollView a fresh identity per topic so the reused detail slot
+        // resets its scroll offset on a topic switch. Assert the id is wired to the topic so the
+        // scroll-reset can't be silently dropped.
+        for topic in [HelpTopic.models, .results, .uninstalling] {
+            let scroll = try HelpDetailView(topic: topic).inspect().find(ViewType.ScrollView.self)
+            #expect(try scroll.id() == AnyHashable(topic))
+        }
+    }
+
+    // MARK: - Label drift guard (non-derived prose ↔ real controls)
+
+    @Test("Every control label named in the help prose still renders in the real UI")
+    func labelsAppearInBothUIAndHelp() throws {
+        let fixture = ManagerFixture()
+        // Seed so the conditionally-shown controls render: a queued file exposes "Clear All", and a
+        // non-empty result exposes the "Copy"/"Export .txt" result section.
+        let manager = fixture.makeManager()
+        manager.addFiles([URL(fileURLWithPath: "/tmp/sample.mp3")])
+        manager.transcriptionResult = "sample transcript"
+        let content = try ContentView(manager: manager).inspect()
+        let settings = try SettingsView(manager: fixture.makeManager()).inspect()
+
+        // Canonical list of the control labels the help book names in prose (the shortcut glyphs
+        // ⌘O/⌘⏎/⌘, aren't derivable from a KeyEquivalent, so they stay best-effort and are out of
+        // scope). This table is the guard's single source: each label must render BOTH as a real
+        // control (ContentView, or SettingsView when `inSettings`) AND somewhere in the help copy —
+        // any 2-of-3 divergence (control renamed, prose renamed, or this table left stale) trips it.
+        // ("Storage" is named in prose too, but its control is a `Section` header, which doesn't
+        // inspect as a plain Text — so it's covered by the derived Storage-path tests instead.)
+        //
+        // Caveat: the control-side check is a plain text match, so a label that renders more than
+        // once is only partially guarded. "Transcribe" is the one such case — it's both the run
+        // button and `DecodingTask.transcribe.displayName` (the Task picker's option) — so a rename
+        // of the button alone (leaving the picker option) would still find the text and pass. It's
+        // kept in the table for the prose-side and simultaneous-rename coverage it does provide.
+        let labels: [(text: String, inSettings: Bool)] = [
+            ("Browse Files", false),
+            ("Clear All", false),
+            ("Task", false),
+            ("Advanced", false),
+            ("Temperature", false),
+            ("Transcribe", false),
+            ("Copy", false),
+            ("Export .txt", false),
+            ("Downloaded models", true),
+            ("Delete Downloaded Models", true),
+            ("Remove All App Data", true),
+            ("Restore Default Settings", true),
+        ]
+
+        for (text, inSettings) in labels {
+            // Control side: the exact label renders as a control title in the corresponding view.
+            let host = inSettings ? settings : content
+            let rendersAsControl = (try? host.find(text: text)) != nil
+            #expect(
+                rendersAsControl,
+                "help names \"\(text)\" but it no longer renders in \(inSettings ? "SettingsView" : "ContentView")"
+            )
+            // Prose side: some help topic still mentions the label.
+            let namedInHelp = HelpTopic.allCases.contains { topic in
+                (try? HelpDetailView(topic: topic).inspect()
+                    .find(textWhere: { prose, _ in prose.contains(text) })) != nil
+            }
+            #expect(namedInHelp, "control \"\(text)\" is no longer mentioned anywhere in the help book")
         }
     }
 }

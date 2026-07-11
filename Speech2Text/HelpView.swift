@@ -75,6 +75,12 @@ struct HelpView: View {
     /// `Speech2TextApp`, so they can't disagree (mirrors `windowTitle`).
     static let windowID = "help"
 
+    /// The topic the detail pane shows for a given sidebar selection: the selected topic, or
+    /// Overview when `selection` is nil (a transient sidebar deselect). Pulled out as a pure
+    /// function so the nil-fallback is unit-testable directly — static ViewInspection always reads
+    /// the `.overview` `@State` seed and so can never exercise this branch (would need ViewHosting).
+    static func detailTopic(_ selection: HelpTopic?) -> HelpTopic { selection ?? .overview }
+
     @State private var selection: HelpTopic? = .overview
 
     var body: some View {
@@ -92,9 +98,9 @@ struct HelpView: View {
             }
             .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
         } detail: {
-            // `selection` is only nil transiently (e.g. a sidebar deselect); fall back to Overview
-            // so the detail pane always shows something.
-            HelpDetailView(topic: selection ?? .overview)
+            // `selection` is only nil transiently (e.g. a sidebar deselect); `detailTopic` falls
+            // back to Overview so the detail pane always shows something.
+            HelpDetailView(topic: Self.detailTopic(selection))
         }
         .navigationTitle(Self.windowTitle)
     }
@@ -125,6 +131,11 @@ struct HelpDetailView: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // Give the ScrollView a per-topic identity so switching topics rebuilds a fresh scroll
+        // container: without this, `HelpDetailView` keeps stable identity in the detail slot and the
+        // reused ScrollView can retain a prior topic's scroll offset (e.g. show a short topic already
+        // scrolled past its content). A distinct `.id` resets the offset to the top on each switch.
+        .id(topic)
         .accessibilityIdentifier("helpDetail-\(topic.rawValue)")
     }
 
