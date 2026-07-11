@@ -163,12 +163,13 @@ final class Speech2TextUITests: XCTestCase {
         return window
     }
 
-    /// A help element addressed by accessibility identifier, matched regardless of the element
-    /// type it surfaces as: a macOS `List` row or a `ScrollView` can appear as a cell, static
-    /// text, or generic element — not necessarily a button — so a typed query (`app.buttons[...]`)
-    /// would silently miss it.
-    private func helpElement(_ app: XCUIApplication, _ identifier: String) -> XCUIElement {
-        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    /// A help element addressed by accessibility identifier, searched within `container` (the help
+    /// window) so the lookup can't stray to a same-id element elsewhere in the app tree. Matched
+    /// regardless of the element type it surfaces as: a macOS `List` row or a `ScrollView` can
+    /// appear as a cell, static text, or generic element — not necessarily a button — so a typed
+    /// query (`container.buttons[...]`) would silently miss it.
+    private func helpElement(_ container: XCUIElement, _ identifier: String) -> XCUIElement {
+        container.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
     func testHelpBookOpensFromMenuAndNavigatesTopics() {
@@ -177,14 +178,14 @@ final class Speech2TextUITests: XCTestCase {
 
         // openSettingsLink lives only on the Uninstalling topic, so its presence/absence is a
         // clean, type-agnostic signal for which detail pane is showing.
-        let settingsLink = helpElement(app, "openSettingsLink")
+        let settingsLink = helpElement(helpWindow, "openSettingsLink")
 
         // The book opens on Overview (the default selection). Assert the Overview *detail* pane is
         // showing — the sidebar row `helpTopic-overview` is present for every selection, so on its
         // own it can't prove the default; `helpDetail-overview` (the detail pane's id) can. Also
         // assert the uninstalling-only Settings link is absent.
-        assertExists(helpElement(app, "helpTopic-overview"), timeout: 10)
-        assertExists(helpElement(app, "helpDetail-overview"))
+        assertExists(helpElement(helpWindow, "helpTopic-overview"), timeout: 10)
+        assertExists(helpElement(helpWindow, "helpDetail-overview"))
         XCTAssertFalse(
             settingsLink.exists,
             "Open Settings link should only appear on the Uninstalling topic"
@@ -192,12 +193,12 @@ final class Speech2TextUITests: XCTestCase {
 
         // Navigate to Uninstalling → its Settings link appears. Because that link is unique to
         // the topic, its appearance proves the sidebar selection swapped the detail pane.
-        helpElement(app, "helpTopic-uninstalling").click()
+        helpElement(helpWindow, "helpTopic-uninstalling").click()
         assertExists(settingsLink)
 
         // Navigate on to Models → the Uninstalling-only link disappears, proving the detail pane
         // updates in both directions.
-        helpElement(app, "helpTopic-models").click()
+        helpElement(helpWindow, "helpTopic-models").click()
         XCTAssertTrue(
             settingsLink.waitForNonExistence(timeout: 5),
             "Open Settings link should disappear when leaving the Uninstalling topic"
