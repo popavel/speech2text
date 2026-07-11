@@ -174,29 +174,18 @@ struct HelpViewTests {
         }
     }
 
-    // MARK: - Container wiring (HelpView)
+    // MARK: - Detail pane identity (HelpDetailView)
 
-    // The tests above inspect `HelpDetailView(topic:)` directly; this covers the one piece of the
-    // `HelpView` container that a fast in-process test can reach: the detail-topic fallback.
-    //
-    // The container's *rendering* (sidebar rows and which detail pane is shown) is NOT inspectable
-    // here: ViewInspector 0.10.3 can't unwrap a custom view whose body is a 2-column
+    // The tests above assert `HelpDetailView(topic:)` content; this pins its per-topic scroll
+    // identity. The `HelpView` *container* rendering (sidebar rows and which detail pane is shown,
+    // plus the nil-selection → Overview `?? .overview` fallback in the detail slot) is NOT
+    // inspectable here: ViewInspector 0.10.3 can't unwrap a custom view whose body is a 2-column
     // `NavigationSplitView(sidebar:detail:)` — every traversal (generic `find`, `navigationSplitView()`,
     // `find(NavigationSplitView.self)`) throws "does not have 'content' attribute" because its child
     // extraction expects the 3-column `content` column. Reshaping production purely to satisfy the
     // test isn't worth it, so the sidebar `helpTopic-*` rows and the default `helpDetail-overview`
     // pane stay covered by the XCUITest (`testHelpBookOpensFromMenuAndNavigatesTopics`), which drives
-    // the real container. What we CAN pin in-process is the pure fallback the detail slot depends on.
-
-    @Test("detailTopic falls back to Overview only when the selection is nil")
-    func detailTopicFallback() {
-        // The nil case is the transient sidebar-deselect path that static ViewInspection can't reach
-        // (it always reads the `.overview` @State seed). Pin the pure helper directly so a regression
-        // — e.g. force-unwrapping the selection — fails this fast suite instead of only the XCUITest.
-        #expect(HelpView.detailTopic(nil) == .overview)
-        #expect(HelpView.detailTopic(.models) == .models)
-        #expect(HelpView.detailTopic(.uninstalling) == .uninstalling)
-    }
+    // the real container.
 
     @Test("Detail ScrollView is identified per topic so scroll offset resets on switch")
     func detailScrollViewIsIdentifiedPerTopic() throws {
