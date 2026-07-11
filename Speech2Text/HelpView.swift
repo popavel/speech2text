@@ -75,12 +75,6 @@ struct HelpView: View {
     /// `Speech2TextApp`, so they can't disagree (mirrors `windowTitle`).
     static let windowID = "help"
 
-    /// The topic the detail pane shows for a given sidebar selection: the selected topic, or
-    /// Overview when `selection` is nil (a transient sidebar deselect). Pulled out as a pure
-    /// function so the nil-fallback is unit-testable directly — static ViewInspection always reads
-    /// the `.overview` `@State` seed and so can never exercise this branch (would need ViewHosting).
-    static func detailTopic(_ selection: HelpTopic?) -> HelpTopic { selection ?? .overview }
-
     @State private var selection: HelpTopic? = .overview
 
     var body: some View {
@@ -98,9 +92,9 @@ struct HelpView: View {
             }
             .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
         } detail: {
-            // `selection` is only nil transiently (e.g. a sidebar deselect); `detailTopic` falls
-            // back to Overview so the detail pane always shows something.
-            HelpDetailView(topic: Self.detailTopic(selection))
+            // `selection` is only nil transiently (e.g. a sidebar deselect); fall back to
+            // Overview so the detail pane always shows something.
+            HelpDetailView(topic: selection ?? .overview)
         }
         .navigationTitle(Self.windowTitle)
     }
