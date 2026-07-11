@@ -55,13 +55,14 @@ enum HelpTopic: String, CaseIterable, Identifiable {
 ///
 /// Facts that can drift from the code are derived from `TranscriptionManager`'s canonical `static`
 /// declarations and are covered by `HelpViewTests`: supported formats, model display names and the
-/// default model, task labels, the storage/uninstall paths, the batch-run header, and the language
-/// count. The rest of the copy is illustrative prose that is NOT derived, so a rebind or a control
+/// default model, the default language name, task labels, the storage/uninstall paths, the
+/// batch-run header, and the language count. The rest of the copy is illustrative prose that is NOT
+/// derived, so a rebind or a control
 /// rename has to be mirrored here by hand. That non-derived surface is every keyboard shortcut
 /// (⌘O/⌘⏎/⌘,) and every ContentView control label named in the text — e.g. the Settings labels
 /// ("Downloaded models", "Delete Downloaded Models", "Remove All App Data", "Restore Default
 /// Settings"), the main-window controls ("Browse Files", "Clear All", "Task", "Advanced",
-/// "Temperature", "Transcribe", "Copy", "Export .txt"), "Auto-detect", and the "Storage" section.
+/// "Temperature", "Transcribe", "Copy", "Export .txt") and the "Storage" section.
 /// Renaming any of these in `ContentView` builds green and passes tests while leaving the help book
 /// misdescribing the UI.
 struct HelpView: View {
@@ -156,9 +157,13 @@ struct HelpDetailView: View {
 
     private var languages: some View {
         VStack(alignment: .leading, spacing: 10) {
-            paragraph("Language defaults to Auto-detect, which lets the model infer the spoken "
-                + "language. To force a specific one, click the language button and use the search "
-                + "field — type part of a name and press Return to pick the top match.")
+            // Default-language name derived from canonical source (mirrors the Models topic's
+            // `Defaults.model.shortName`) so a rename of `TranscriptionLanguage.auto` can't leave
+            // this line describing a control label the app no longer shows.
+            paragraph("Language defaults to \(TranscriptionManager.Defaults.language.displayName), "
+                + "which lets the model infer the spoken language. To force a specific one, click "
+                + "the language button and use the search field — type part of a name and press "
+                + "Return to pick the top match.")
             paragraph("The full Whisper language set (around "
                 + "\(TranscriptionLanguage.spokenLanguageCount) languages) is available.")
         }

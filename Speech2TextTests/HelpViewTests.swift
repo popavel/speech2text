@@ -93,6 +93,21 @@ struct HelpViewTests {
         }
     }
 
+    @Test("Languages topic names the default language derived from canonical source")
+    func languagesNamesDerivedDefault() throws {
+        let view = HelpDetailView(topic: .languages)
+        // The prose must derive the default-language name from the canonical source (like the
+        // Models topic derives `Defaults.model.shortName`), not restate a literal — so a rename of
+        // `TranscriptionLanguage.auto`'s displayName updates the help copy instead of leaving it
+        // stale. Recompute from the same source the view reads so this stays in lockstep.
+        let name = TranscriptionManager.Defaults.language.displayName
+        #expect(throws: Never.self) {
+            try view.inspect().find(textWhere: { text, _ in
+                text.contains("defaults to \(name)")
+            })
+        }
+    }
+
     @Test("Transcribing topic lists every task and documents the canonical batch header")
     func transcribingListsTasksAndHeader() throws {
         let view = HelpDetailView(topic: .transcribing)
