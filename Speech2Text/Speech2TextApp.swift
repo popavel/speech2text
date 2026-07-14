@@ -52,18 +52,24 @@ struct Speech2TextApp: App {
         // The About panel, opened from the app menu ▸ About Speech2Text. A single-instance `Window`
         // (like Help) so re-choosing the menu item brings the same panel forward rather than
         // spawning a second; `.contentSize` resizability gives it the tight, non-resizable feel of
-        // the stock About panel.
+        // the stock About panel. `.restorationBehavior(.disabled)` so it opens only on demand — an
+        // auxiliary panel left open at quit shouldn't reappear on its own on the next launch (no
+        // native About panel does).
         Window(AboutView.windowTitle, id: AboutView.windowID) {
             AboutView()
         }
         .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
 
         // The in-app help book, opened from Help ▸ Speech2Text Help. A standalone window so it can
         // stay open alongside the main window (its Uninstalling topic links into Settings).
+        // `.restorationBehavior(.disabled)` (like About) so it opens only via the Help menu rather
+        // than reappearing by itself when it was open at the previous quit.
         Window(HelpView.windowTitle, id: HelpView.windowID) {
             HelpView()
         }
         .defaultSize(width: 720, height: 520)
+        .restorationBehavior(.disabled)
 
         Settings {
             SettingsView(manager: manager)

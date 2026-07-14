@@ -83,13 +83,15 @@ struct AboutView: View {
         .frame(width: 380)
     }
 
-    /// "Version X (Y)" read from the bundle's Info.plist, which now maps
+    /// "Version X (Y)" read once from the bundle's Info.plist, which now maps
     /// `CFBundleShortVersionString`/`CFBundleVersion` from the `MARKETING_VERSION`/
     /// `CURRENT_PROJECT_VERSION` build settings — so this shows the real shipped version instead of a
-    /// duplicated literal, and can't drift from `project.yml`. `nil` when the bundle carries no
-    /// version (only under a stripped test host), so the line is simply omitted there rather than
-    /// showing a placeholder.
-    private static var versionString: String? {
+    /// duplicated literal, and can't drift from `project.yml`. Computed a single time for the process
+    /// (the bundle version is fixed for the process lifetime, so a `static let` avoids re-reading the
+    /// Info.plist on every `body` render — mirrors how `HelpView` hoists its derived strings). `nil`
+    /// when the bundle carries no version (only under a stripped test host), so the line is simply
+    /// omitted there rather than showing a placeholder.
+    private static let versionString: String? = {
         let info = Bundle.main.infoDictionary
         guard let short = info?["CFBundleShortVersionString"] as? String, !short.isEmpty else {
             return nil
@@ -98,5 +100,5 @@ struct AboutView: View {
             return "Version \(short) (\(build))"
         }
         return "Version \(short)"
-    }
+    }()
 }
