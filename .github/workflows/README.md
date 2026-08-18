@@ -13,10 +13,36 @@ prose on how the automation fits together, see the **Automation helpers** sectio
   (Debug, signing off) on `macos-26`, pinned to Xcode 26.4.1.
 - [`feature.yml`](feature.yml) — calls `build-and-test` on `feature/**` branches.
 - [`main.yml`](main.yml) — calls `build-and-test` on pushes / PRs to `main`.
-- [`release.yml`](release.yml) — calls `build-and-test` on `release/**` branches.
+- [`release.yml`](release.yml) — calls `build-and-test` on `release/**` branches. Despite the
+  name it publishes nothing; the distribution pipeline is `publish-release.yml` below.
 
 Each of the three pipelines also calls `integration-whisperkit` and `ui-tests` (both
 `needs: build-and-test`) — see below.
+
+### Distribution
+
+- [`publish-release.yml`](publish-release.yml) — the actual release pipeline, triggered by a
+  `vX.Y.Z` tag. Gates on `build-and-test`, then: preflight (the tag must equal both versions in
+  `project.yml`; `SUFeedURL`/`SUPublicEDKey` must be present) → import the Developer ID cert into
+  a throwaway keychain → Release build with hardened runtime → verify the **built product**
+  (versions, signature, runtime flag, unsandboxed, `Sparkle.framework` embedded, feed keys intact)
+  → notarize + staple the app → ZIP it for Sparkle → build, sign, notarize and staple a DMG →
+  `generate_appcast` (from the verified SwiftPM artifact store, never a download) → upload
+  everything to a **draft** GitHub Release and flip it to published last.
+
+  Known limitations: it needs `contents: write` and seven repository secrets
+  (`DEVID_CERT_P12_BASE64`, `DEVID_CERT_PASSWORD`, `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`,
+  `ASC_API_KEY_P8`, `SPARKLE_ED_PRIVATE_KEY`). Two `notarytool --wait` round-trips dominate the
+  runtime, hence the 75-minute timeout. It refuses to overwrite an already-published release, but
+  will delete and rebuild a stale *draft* so a failed run can be retried on the same tag. See
+  AGENTS.md "Distribution & updates" for the runbook and the reasoning behind the guards.
+
+  **The appcast carries exactly one item.** `artifacts/` starts empty each run and the previous
+  feed is never fetched, so every release publishes a single-entry appcast. Two consequences,
+  neither biting today: raising `LSMinimumSystemVersion` in a future release would leave users on
+  the older OS with a feed containing nothing they can install (and so no update path), and
+  Sparkle can't generate delta updates without the prior archives. Both are fixed the same way —
+  download the previous release's archives into `artifacts/` before `generate_appcast` runs.
 
 ### Integration
 

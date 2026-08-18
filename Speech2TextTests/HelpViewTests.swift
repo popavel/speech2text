@@ -209,7 +209,7 @@ struct HelpViewTests {
         manager.addFiles([URL(fileURLWithPath: "/tmp/sample.mp3")])
         manager.transcriptionResult = "sample transcript"
         let content = try ContentView(manager: manager).inspect()
-        let settings = try SettingsView(manager: fixture.makeManager()).inspect()
+        let settings = try SettingsView(manager: fixture.makeManager(), updater: FakeUpdater()).inspect()
 
         // Canonical list of the control labels the help book names in prose (the shortcut glyphs
         // ⌘O/⌘⏎/⌘, aren't derivable from a KeyEquivalent, so they stay best-effort and are out of
@@ -237,6 +237,9 @@ struct HelpViewTests {
             ("Delete Downloaded Models", true),
             ("Remove All App Data", true),
             ("Restore Default Settings", true),
+            // The Updates section's toggle. ("Check for Updates…" is a menu command, not a
+            // control in either view, so it can't be guarded by this table.)
+            ("Check for updates automatically", true),
         ]
 
         for (text, inSettings) in labels {

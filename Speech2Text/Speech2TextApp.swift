@@ -8,6 +8,14 @@ struct Speech2TextApp: App {
     /// `ContentView(manager:)`.
     @State private var manager: TranscriptionManager
 
+    /// The app's one updater, shared by the menu command and the Settings toggle. Constructed in
+    /// `init()` (not lazily in a view) because Sparkle's scheduled check has to start at launch,
+    /// and because it needs `manager` for its busy check. The default `startingUpdater:` argument
+    /// gates it off in test-hosted and `-uiTesting` processes, where it would otherwise construct
+    /// Sparkle objects over the developer's real preferences — see
+    /// `SparkleUpdaterModel.shouldStartUpdater`.
+    @State private var updater: SparkleUpdaterModel
+
     init() {
         #if DEBUG
         // Under `-uiTesting`, persist settings to an isolated, volatile store instead of
@@ -21,6 +29,18 @@ struct Speech2TextApp: App {
         let manager = TranscriptionManager()
         #endif
         _manager = State(initialValue: manager)
+        // The busy check postpones an update's install-and-RELAUNCH (never the check itself — see
+        // `UpdaterDelegate` for why guarding the check is the wrong fix) while work is in flight:
+        // mid-transcription the run and the unexported transcript both live only in memory, and
+        // mid-removal a relaunch would leave a half-deleted cache with the defaults cleanup
+        // skipped, so "cleared" settings would survive. Both flags, matching every other busy gate
+        // in the app. Capturing `manager` is safe: it holds no reference back to the updater, so
+        // there is no cycle.
+        _updater = State(
+            initialValue: SparkleUpdaterModel(
+                isBusy: { manager.isProcessing || manager.isRemovingData }
+            )
+        )
     }
 
     var body: some Scene {
@@ -39,6 +59,11 @@ struct Speech2TextApp: App {
             // window. `openWindow` is reached the same way as Help, via a dedicated command `View`.
             CommandGroup(replacing: .appInfo) {
                 AboutMenuCommand()
+            }
+            // "Check for Updates…" directly under About, where macOS apps conventionally put it.
+            // Disabled whenever the updater can't check — including every gated (test) launch.
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesCommand(updater: updater)
             }
             // Replace the default (help-book-less, and so broken) "Speech2Text Help" item with our
             // in-app help book — a NavigationSplitView window documenting the app's features, with
@@ -72,7 +97,7 @@ struct Speech2TextApp: App {
         .restorationBehavior(.disabled)
 
         Settings {
-            SettingsView(manager: manager)
+            SettingsView(manager: manager, updater: updater)
         }
     }
 }

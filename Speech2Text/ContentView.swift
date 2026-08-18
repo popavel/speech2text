@@ -552,6 +552,10 @@ private struct LanguagePicker: View {
 /// while that window is transcribing.
 struct SettingsView: View {
     let manager: TranscriptionManager
+    /// The app's updater, injected (never constructed here) so tests can drive this view against
+    /// a fake without bringing a real `SPUUpdater` — and its shared-defaults writes — into the
+    /// test process. See `Updater.swift`.
+    let updater: any UpdaterModel
 
     @Environment(\.controlActiveState) private var controlActiveState
 
@@ -601,6 +605,29 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Updates") {
+                // Sparkle owns this preference (`SUEnableAutomaticChecks` in the app's defaults
+                // domain), deliberately outside `TranscriptionManager.Keys.all` — so "Remove All
+                // App Data" and "Restore Default Settings" leave it alone.
+                Toggle(
+                    "Check for updates automatically",
+                    isOn: Binding(
+                        get: { updater.automaticallyChecksForUpdates },
+                        set: { updater.automaticallyChecksForUpdates = $0 }
+                    )
+                )
+                // Inert in gated processes (any Debug build, a test host, -uiTesting): there is no
+                // updater behind it, so a write would be dropped on the next launch. Say so rather
+                // than offering a control that silently does nothing.
+                .disabled(!updater.isActive)
+                .accessibilityIdentifier("automaticUpdatesToggle")
+
+                Text(updatesCaption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("updatesCaption")
+            }
+
             Section("Defaults") {
                 Button("Restore Default Settings") {
                     showRestoreConfirmation = true
@@ -610,7 +637,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 280)
+        .frame(width: 420, height: 380)
         .task { refreshSize() }
         .onChange(of: controlActiveState) { _, state in
             // macOS builds the Settings window once and merely hides it on close, so
@@ -668,6 +695,20 @@ struct SettingsView: View {
             Text("Some files couldn’t be removed — check permissions and try again, or remove them "
                 + "manually.")
         }
+    }
+
+    /// Explains what the Updates section is currently doing. Tracks BOTH the toggle and whether
+    /// an updater is driving it, so the copy can't claim a daily check that isn't happening —
+    /// after switching the toggle off, or in a gated build where there is no updater at all.
+    private var updatesCaption: String {
+        guard updater.isActive else {
+            return "Updates are disabled in development builds."
+        }
+        guard updater.automaticallyChecksForUpdates else {
+            return "Automatic checks are off — use Check for Updates… in the Speech2Text menu."
+        }
+        return "Speech2Text checks about once a day and verifies each update's signature "
+            + "before installing it."
     }
 
     /// Whether a measured, non-empty cache exists — the plain-Int predicate the delete

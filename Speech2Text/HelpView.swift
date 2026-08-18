@@ -16,6 +16,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
     case transcribing
     case results
     case storage
+    case updates
     case uninstalling
 
     var id: String { rawValue }
@@ -30,6 +31,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
         case .transcribing: return "Transcribing"
         case .results: return "Results"
         case .storage: return "Storage & data"
+        case .updates: return "Updates"
         case .uninstalling: return "Uninstalling"
         }
     }
@@ -44,6 +46,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
         case .transcribing: return "waveform"
         case .results: return "doc.text"
         case .storage: return "internaldrive"
+        case .updates: return "arrow.down.circle"
         case .uninstalling: return "trash"
         }
     }
@@ -119,6 +122,7 @@ struct HelpDetailView: View {
                 case .transcribing: transcribing
                 case .results: results
                 case .storage: storage
+                case .updates: updates
                 case .uninstalling: uninstalling
                 }
             }
@@ -139,8 +143,9 @@ struct HelpDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             paragraph("Speech2Text transcribes audio and video to text entirely on your Mac. It "
                 + "uses OpenAI Whisper models running locally through WhisperKit, so your files "
-                + "never leave your computer and no internet connection is needed once a model has "
-                + "been downloaded.")
+                + "never leave your computer and transcription needs no internet connection once "
+                + "a model has been downloaded. The app still contacts the network to check for "
+                + "updates; you can turn that off in Settings ▸ Updates.")
             paragraph("Add one or more files, optionally pick a language and model, then click "
                 + "Transcribe. The result appears in an editable box you can copy or export.")
             paragraph("Downloaded models and saved settings are managed in Settings (⌘,).")
@@ -224,6 +229,23 @@ struct HelpDetailView: View {
             }
             paragraph("Models are stored under:")
             pathRow(Self.modelsPath, id: "modelsPathRow")
+        }
+    }
+
+    private var updates: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            paragraph("Speech2Text keeps itself up to date. It checks for a new version about "
+                + "once a day and, when one is available, offers to download and install it.")
+            VStack(alignment: .leading, spacing: 8) {
+                labeledItem("Check for Updates…",
+                    "In the Speech2Text menu — checks right now instead of waiting.")
+                labeledItem("Check for updates automatically",
+                    "In Settings ▸ Updates — turn the daily check off to update only by hand.")
+            }
+            paragraph("Every update is signature-checked before it installs, so an update that "
+                + "wasn't published by the developer is refused.")
+            paragraph("Updates apply to builds downloaded from the project's releases page. A "
+                + "development build compiled in Xcode never updates itself.")
         }
     }
 
