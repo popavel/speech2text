@@ -1,0 +1,571 @@
+name: Publish Release
+
+# The distribution pipeline. On a `vX.Y.Z` tag it produces a Developer ID-signed,
+# hardened-runtime, notarized + stapled Release build and publishes two artifacts plus a
+# Sparkle appcast onto a GitHub Release:
+#
+#   * Speech2Text-X.Y.Z.zip  — the Sparkle update payload (the format generate_appcast consumes)
+#   * Speech2Text-X.Y.Z.dmg  — the human download linked from the project website
+#   * appcast.xml            — the EdDSA-signed update feed installed apps poll
+#   * Speech2Text-X.Y.Z-dSYMs.zip — symbols for crash symbolication
+#
+# The release is created as a DRAFT while assets upload, then flipped to published in one final
+# step: `releases/latest` (the live feed URL baked into every shipped binary) already redirects
+# to this tag while the assets are still uploading, so a non-draft release would 404 for apps
+# polling in that window.
+#
+# Required repository secrets:
+#   DEVID_CERT_P12_BASE64 / DEVID_CERT_PASSWORD — Developer ID Application cert
+#   APPLE_TEAM_ID                                — signing team
+#   ASC_KEY_ID / ASC_ISSUER_ID / ASC_API_KEY_P8  — App Store Connect API key (for notarytool)
+#   SPARKLE_ED_PRIVATE_KEY                       — Sparkle EdDSA private key (generate_keys -x)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Keyed per TAG, deliberately. A repo-wide group would serialize publishes, but GitHub keeps only
+# one *pending* run per group and cancels the previously pending one — push v0.0.2, v0.0.3, v0.0.4
+# in quick succession and v0.0.3's run is discarded without executing a step, leaving a tag with
+# nothing published. Concurrent publishes are instead handled where they actually race: the
+# "Publish the release" step below declines `--latest` when a newer release already exists, and
+# re-checks afterwards. That check is best-effort, NOT atomic — GitHub offers no compare-and-set
+# for the latest flag, so two publishes finishing within the same few seconds can still interleave;
+# the post-flip re-check is what turns that into a loud warning instead of a silent regression.
+concurrency:
+  group: publish-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # needed to create the GitHub Release and upload assets
+
+env:
+  XCODE_PROJECT: Speech2Text.xcodeproj
+  XCODE_SCHEME: Speech2Text
+
+jobs:
+  # The same cheap gate every other pipeline runs. A release must never ship code that hasn't
+  # built and passed the suite.
+  build-and-test:
+    uses: ./.github/workflows/build-and-test.yml
+
+  publish:
+    name: Build, notarize, publish
+    needs: build-and-test
+    runs-on: macos-26
+    timeout-minutes: 75          # Release build ~15-20m + two notarytool --wait round-trips
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4.1'
+
+      - name: Install build tools
+        # openssl@3 is not optional here: macOS's own `openssl` is LibreSSL, which cannot do
+        # ed25519, and without real OpenSSL the Sparkle keypair preflight below degrades to a
+        # warning — letting a key mismatch publish green and strand every installed copy.
+        run: brew install xcodegen xcbeautify openssl@3
+
+      # ---------------------------------------------------------------------------------------
+      # Preflight. Everything cheap that can invalidate the release, checked BEFORE the 20-minute
+      # build and before any secret is written to disk.
+      # ---------------------------------------------------------------------------------------
+      - name: Preflight — tag matches project.yml, Sparkle keys present and paired
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          # STRICT vX.Y.Z, matching the regex the publish step uses to decide the `--latest`
+          # flag. A looser glob here (e.g. accepting v1.2.3-beta) would pass preflight and then
+          # fail that step ~45 minutes later, after the build and both notarizations, stranding
+          # the release as an uploaded draft.
+          TAG="${GITHUB_REF_NAME}"
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::tag '$TAG' is not a strict vX.Y.Z release tag"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+
+          # Both versions live at project level in project.yml and are bumped together. If the tag
+          # disagrees, the appcast entry and the artifact filenames would describe different
+          # builds — and the wrong one becomes the permanent feed head.
+          # `|| true` on each substitution: under `set -euo pipefail` a non-matching grep makes the
+          # assignment exit non-zero and kills the step outright, so the diagnostic below would be
+          # unreachable and the failure silent. Let it produce an empty value and report properly.
+          # Handles quoted AND unquoted YAML scalars: `MARKETING_VERSION: 0.0.1` is valid YAML
+          # and builds fine, but a quote-only pattern would echo the whole line back and block the
+          # release while telling the maintainer to make a change they had already made.
+          yaml_scalar() {
+            grep -E "^[[:space:]]+$1:" project.yml \
+              | sed -n '1p' \
+              | sed -E 's/^[^:]*:[[:space:]]*//; s/^"//; s/"$//; s/[[:space:]]*$//'
+          }
+          MARKETING=$(yaml_scalar MARKETING_VERSION || true)
+          CURRENT=$(yaml_scalar CURRENT_PROJECT_VERSION || true)
+          if [ "$MARKETING" != "$VERSION" ] || [ "$CURRENT" != "$VERSION" ]; then
+            echo "::error::tag $TAG implies $VERSION but project.yml has MARKETING_VERSION=$MARKETING CURRENT_PROJECT_VERSION=$CURRENT — bump both to $VERSION and re-tag"
+            exit 1
+          fi
+
+          # The feed URL and public key are baked into the shipped binary. A build missing either
+          # launches perfectly and silently never updates — and becomes the permanent feed head.
+          # `|| true` for the same reason as above — PlistBuddy exits 1 on a missing key, which
+          # would abort the step before the guard could say which key was missing.
+          SPARKLE_FEED=$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' Info.plist 2>/dev/null || true)
+          SPARKLE_PUB=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Info.plist 2>/dev/null || true)
+          [ -n "$SPARKLE_FEED" ] || { echo "::error::Info.plist has no SUFeedURL"; exit 1; }
+          [ -n "$SPARKLE_PUB" ]  || { echo "::error::Info.plist has no SUPublicEDKey"; exit 1; }
+          # An EdDSA public key is 32 bytes base64 -> 44 chars. Catches a placeholder.
+          [ "${#SPARKLE_PUB}" -eq 44 ] || { echo "::error::SUPublicEDKey is ${#SPARKLE_PUB} chars, expected 44 — placeholder?"; exit 1; }
+          # …and the feed must point at THIS repo. A fork (or a renamed repo) would otherwise
+          # publish its appcast to its own releases while shipping binaries that poll the original
+          # repo's feed — so its users silently receive upstream's builds, or, if the signing key
+          # differs, stop receiving updates at all, with this job green throughout.
+          case "$SPARKLE_FEED" in
+            *"/${GITHUB_REPOSITORY}/"*) ;;
+            *) echo "::error::SUFeedURL ($SPARKLE_FEED) does not point at ${GITHUB_REPOSITORY} — a build published from here would poll a different repository's update feed. Update Info.plist before releasing from this repo."; exit 1 ;;
+          esac
+
+          # The two halves must be ONE keypair. If the private key were rotated without updating
+          # SUPublicEDKey (or vice versa), generate_appcast would still happily sign and publish,
+          # and every installed copy would then REJECT the update — silently losing its update
+          # path with no way to push a fix. Checked here, in seconds, rather than after ~45
+          # minutes of building and two notarization round-trips.
+          #
+          # Sparkle's exported key is the raw 32-byte ed25519 SEED, so the public half has to be
+          # derived by scalar multiplication — no shell-only byte slicing can do it. Wrapping the
+          # seed in the fixed PKCS#8 prefix lets OpenSSL derive it. Needs real OpenSSL 3:
+          # /usr/bin/openssl on macOS is LibreSSL, which does not support ed25519 here.
+          # Capture then match, never `… | grep -q` — see the hardened-runtime check. A SIGPIPE
+          # here would leave SSL empty and silently downgrade the keypair check to a warning.
+          SSL=""
+          for c in "$(brew --prefix openssl@3 2>/dev/null)/bin/openssl" openssl; do
+            command -v "$c" >/dev/null 2>&1 || continue
+            SSL_VERSION=$("$c" version 2>/dev/null || true)
+            case "$SSL_VERSION" in OpenSSL*) SSL="$c"; break ;; esac
+          done
+          # Only the NEW key format is a bare 32-byte seed (generate_keys' own help says so).
+          # Legacy exports decode to a different length and a different layout, so wrapping them
+          # in the PKCS#8 prefix would produce garbage and accuse a perfectly valid key of not
+          # matching. Skip loudly instead of lying.
+          KEY_BYTES=$(printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | base64 -d 2>/dev/null | wc -c | tr -d ' ' || true)
+          if [ -z "$SSL" ]; then
+            # We brew-install openssl@3 above, so this means the toolchain is broken. Refuse to
+            # publish rather than skip a check whose failure mode is unrecoverable.
+            echo "::error::no OpenSSL 3 on PATH despite installing openssl@3 — cannot verify that SPARKLE_ED_PRIVATE_KEY pairs with SUPublicEDKey, and a mismatch would strand every installed copy. Refusing to publish."
+            exit 1
+          elif [ "$KEY_BYTES" != "32" ]; then
+            echo "::warning::SPARKLE_ED_PRIVATE_KEY decodes to ${KEY_BYTES} bytes, not the 32-byte seed of Sparkle's current key format — SKIPPED the keypair check rather than risk a false mismatch. Re-export with a current generate_keys -x to enable it."
+          else
+            DERIVED_PUB=$(
+              { printf '302e020100300506032b657004220420' | xxd -r -p
+                printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | base64 -d
+              } | "$SSL" pkey -inform DER -pubout -outform DER 2>/dev/null | tail -c 32 | base64 || true
+            )
+            if [ "$DERIVED_PUB" != "$SPARKLE_PUB" ]; then
+              echo "::error::SPARKLE_ED_PRIVATE_KEY does not match SUPublicEDKey in Info.plist — updates signed with it would be rejected by every installed copy. Rotating the Sparkle key means updating BOTH, in the same commit."
+              exit 1
+            fi
+            echo "Sparkle keypair verified: the private key matches SUPublicEDKey."
+          fi
+
+          {
+            echo "VERSION=$VERSION"
+            echo "SPARKLE_FEED=$SPARKLE_FEED"
+            echo "SPARKLE_PUB=$SPARKLE_PUB"
+          } >> "$GITHUB_ENV"
+          echo "Publishing $TAG (version $VERSION), feed $SPARKLE_FEED"
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # ---------------------------------------------------------------------------------------
+      # Signing identity. A throwaway keychain, deleted in an always() step at the end.
+      # ---------------------------------------------------------------------------------------
+      - name: Import Developer ID certificate
+        env:
+          DEVID_CERT_P12_BASE64: ${{ secrets.DEVID_CERT_P12_BASE64 }}
+          DEVID_CERT_PASSWORD: ${{ secrets.DEVID_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          # Random per-run password: this keychain never outlives the job.
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          CERT_PATH="$RUNNER_TEMP/devid.p12"
+
+          printf '%s' "$DEVID_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" \
+            -P "$DEVID_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm "$CERT_PATH"
+          # Without this, codesign prompts for keychain access and hangs the runner.
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      # ---------------------------------------------------------------------------------------
+      # Build. Signing settings are injected HERE only — project.yml stays team-free so local dev
+      # and the signing-off CI builds are untouched. Hardened runtime + secure timestamp are
+      # notarization prerequisites; Xcode re-signs the embedded Sparkle.framework (and its XPC
+      # services) with the same identity. DEPLOYMENT_POSTPROCESSING=YES turns on install-style
+      # postprocessing for this plain `build`, which runs the Strip phase — without it a plain
+      # build ships the full Swift symbol table. The dSYM is generated from the UNSTRIPPED linked
+      # binary before Strip runs, and codesigning happens after it, so the dSYM zip below keeps
+      # full symbols and the signature covers the stripped binary.
+      # ---------------------------------------------------------------------------------------
+      - name: Build (Release, Developer ID, hardened runtime)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath DerivedData \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            ENABLE_HARDENED_RUNTIME=YES \
+            OTHER_CODE_SIGN_FLAGS="--timestamp" \
+            DEBUG_INFORMATION_FORMAT=dwarf-with-dsym \
+            DEPLOYMENT_POSTPROCESSING=YES \
+            STRIP_INSTALLED_PRODUCT=YES \
+            build | xcbeautify
+
+      # ---------------------------------------------------------------------------------------
+      # Verify the ARTIFACT, not just the source. A source guard proves what the repo says; only a
+      # product-level one proves what ships, and the two diverge the moment a per-target setting
+      # (INFOPLIST_FILE, CODE_SIGN_ENTITLEMENTS) is overridden on an xcodebuild line.
+      # ---------------------------------------------------------------------------------------
+      - name: Verify the built product
+        run: |
+          set -euo pipefail
+          APP="DerivedData/Build/Products/Release/Speech2Text.app"
+          [ -d "$APP" ] || { echo "::error::$APP was not produced"; exit 1; }
+
+          # Versions must equal the tag: generate_appcast derives the feed entry from this plist,
+          # so a broken $(MARKETING_VERSION) substitution would publish a zip named $VERSION whose
+          # feed entry says something else — installed apps never see the update, or see a
+          # downgrade, with the broken feed head permanent.
+          # `|| true` throughout: PlistBuddy exits 1 on a missing key and `set -e` would kill the
+          # step before the guard could name it. Empty never equals $VERSION, so it still fails.
+          BUILT_SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" 2>/dev/null || true)
+          BUILT_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist" 2>/dev/null || true)
+          [ "$BUILT_SHORT" = "$VERSION" ] || { echo "::error::built CFBundleShortVersionString=$BUILT_SHORT, expected $VERSION"; exit 1; }
+          [ "$BUILT_BUILD" = "$VERSION" ] || { echo "::error::built CFBundleVersion=$BUILT_BUILD, expected $VERSION"; exit 1; }
+
+          # `codesign --verify` proves the signature is VALID, not that what it embedded is right —
+          # a wrong entitlement is a correctly signed wrong entitlement, and notarization and spctl
+          # are equally indifferent (sandboxing is not a notarization failure).
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          # Capture first, then match: `grep -q` exits on its first match and would SIGPIPE
+          # codesign (exit 141), which under `set -o pipefail` fails the step and aborts a
+          # perfectly good release ~20 minutes in with a misleading message.
+          SIGINFO=$(codesign -dv --verbose=4 "$APP" 2>&1 || true)
+          grep -q 'flags=.*runtime' <<<"$SIGINFO" \
+            || { echo "::error::hardened runtime flag missing from the signature"; echo "$SIGINFO"; exit 1; }
+          # Fails CLOSED: if the entitlements can't be read at all we refuse to publish rather
+          # than report an unverified product as verified. Read with PlistBuddy, NOT
+          # `plutil -extract` — plutil splits key paths on "." and so can never match a key
+          # literally named `com.apple.security.app-sandbox`.
+          ENTS="$RUNNER_TEMP/entitlements.plist"
+          rm -f "$ENTS"
+          codesign -d --entitlements "$ENTS" --xml "$APP" 2>/dev/null || true
+          [ -s "$ENTS" ] \
+            || { echo "::error::could not extract entitlements from the product — refusing to publish an unverified build"; exit 1; }
+          # An absent key legitimately means "not sandboxed"; only an explicit true is a failure.
+          SANDBOXED=$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$ENTS" 2>/dev/null || echo false)
+          [ "$SANDBOXED" = "false" ] \
+            || { echo "::error::the product is sandboxed (app-sandbox=$SANDBOXED) — direct-download builds must not be"; exit 1; }
+
+          # Sparkle must be PRESENT and the plist keys must have survived into the product. A build
+          # that lost either launches clean, silently never updates, and becomes the permanent feed
+          # head — no other check in this pipeline would notice.
+          [ -d "$APP/Contents/Frameworks/Sparkle.framework" ] \
+            || { echo "::error::Sparkle.framework is not embedded in the product"; exit 1; }
+          PROD_FEED=$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$APP/Contents/Info.plist" 2>/dev/null || true)
+          PROD_PUB=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist" 2>/dev/null || true)
+          [ "$PROD_FEED" = "$SPARKLE_FEED" ] || { echo "::error::product SUFeedURL '$PROD_FEED' != vetted '$SPARKLE_FEED'"; exit 1; }
+          [ "$PROD_PUB" = "$SPARKLE_PUB" ]   || { echo "::error::product SUPublicEDKey does not match the vetted source value"; exit 1; }
+
+          echo "Product verified: $VERSION, hardened, unsandboxed, Sparkle embedded and configured."
+
+      # ---------------------------------------------------------------------------------------
+      # Notarize the app, then staple the ticket to the .app itself so it validates offline.
+      # ---------------------------------------------------------------------------------------
+      - name: Notarize and staple the app
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          APP="DerivedData/Build/Products/Release/Speech2Text.app"
+          ASC_KEY_PATH="$RUNNER_TEMP/asc.p8"
+          printf '%s' "$ASC_API_KEY_P8" > "$ASC_KEY_PATH"
+
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$ASC_KEY_PATH" \
+            --key-id "${{ secrets.ASC_KEY_ID }}" \
+            --issuer "${{ secrets.ASC_ISSUER_ID }}" \
+            --wait
+          rm "$RUNNER_TEMP/notarize.zip"
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+          # `stapler validate` proves a ticket is attached, NOT that Gatekeeper accepts the app.
+          # This is the binary Sparkle actually installs out of the ZIP, so assess it directly
+          # rather than inferring from the DMG's own signature later.
+          spctl -a -vvv -t exec "$APP"
+          # Keep the key for the DMG submission below; it is deleted in the cleanup step.
+          echo "ASC_KEY_PATH=$ASC_KEY_PATH" >> "$GITHUB_ENV"
+
+      # The zip that ships to Sparkle: the STAPLED app, alone in a directory, because
+      # generate_appcast treats every archive in its input directory as an update entry.
+      - name: Zip the stapled app (Sparkle payload)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ditto -c -k --sequesterRsrc --keepParent \
+            "DerivedData/Build/Products/Release/Speech2Text.app" \
+            "artifacts/Speech2Text-${VERSION}.zip"
+
+      # ---------------------------------------------------------------------------------------
+      # The DMG: the human-facing download for the project website. Built from the already-stapled
+      # app, then signed, notarized and stapled in its own right so it validates offline too. It
+      # lives OUTSIDE artifacts/ so generate_appcast never sees it as a second update entry.
+      # ---------------------------------------------------------------------------------------
+      - name: Build, sign, notarize and staple the DMG
+        run: |
+          set -euo pipefail
+          mkdir -p dist dmgroot
+          # ditto, not cp -R: it is the tool that reliably preserves the extended attributes and
+          # symlink layout a signed, stapled bundle depends on.
+          ditto "DerivedData/Build/Products/Release/Speech2Text.app" "dmgroot/Speech2Text.app"
+          # Re-verify the COPY. spctl on the finished .dmg assesses the disk image, not the app
+          # nested inside it, so a signature or ticket mangled in transit would ship undetected
+          # while the ZIP path stayed green.
+          codesign --verify --deep --strict --verbose=2 "dmgroot/Speech2Text.app"
+          xcrun stapler validate "dmgroot/Speech2Text.app"
+          spctl -a -vvv -t exec "dmgroot/Speech2Text.app"
+          # A drag-to-Applications target, the conventional Mac install affordance.
+          ln -s /Applications dmgroot/Applications
+
+          DMG="dist/Speech2Text-${VERSION}.dmg"
+          hdiutil create -volname "Speech2Text ${VERSION}" \
+            -srcfolder dmgroot -ov -format UDZO "$DMG"
+
+          codesign --force --sign "Developer ID Application" --timestamp "$DMG"
+          xcrun notarytool submit "$DMG" \
+            --key "$ASC_KEY_PATH" \
+            --key-id "${{ secrets.ASC_KEY_ID }}" \
+            --issuer "${{ secrets.ASC_ISSUER_ID }}" \
+            --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          # `-t open --context context:primary-signature` is the documented assessment for a disk
+          # image (`-t install` is for installer packages).
+          spctl -a -t open --context context:primary-signature -vv "$DMG"
+
+      # Separate directory from artifacts/ — see the generate_appcast note above.
+      - name: Zip dSYMs
+        run: |
+          set -euo pipefail
+          mkdir -p dsyms dsymstage
+          # EVERY dSYM the Release build produced, not just the app's: Sparkle.framework,
+          # Autoupdate, Updater.app and the two XPC services get their own. The update path is the
+          # one subsystem never exercised in Debug, so a crash there is exactly the case that most
+          # needs symbolicating — and it lives in those binaries, not in Speech2Text.app.
+          cp -R DerivedData/Build/Products/Release/*.dSYM dsymstage/
+          echo "Bundling dSYMs:"; ls -1 dsymstage
+          ditto -c -k --sequesterRsrc dsymstage "dsyms/Speech2Text-${VERSION}-dSYMs.zip"
+
+      # ---------------------------------------------------------------------------------------
+      # The appcast. generate_appcast comes out of the package store this job already resolved:
+      # Sparkle ships its CLI tools inside the same zip the framework comes from, which SwiftPM
+      # fetches for a binaryTarget(checksum:) and rejects on a SHA-256 mismatch, at a revision
+      # pinned in Package.resolved. So the tool that receives the EdDSA private key is the exact
+      # artifact the app embeds, integrity-checked. NEVER re-download it — Sparkle's release
+      # tarballs are ad-hoc signed, so a download can't be verified and would hand a signing
+      # secret to unauthenticated code.
+      #
+      # KNOWN LIMITATION — the feed carries exactly ONE item. `artifacts/` is fresh every run and
+      # the previous appcast is never fetched, so each release regenerates a single-entry feed.
+      # That is fine while every supported Mac can run the newest build, but it has two
+      # consequences to fix before they bite: (1) if a future release raises
+      # LSMinimumSystemVersion, users on the older OS see a feed with no item they can install and
+      # silently lose their update path — they would need an older entry retained; (2) Sparkle
+      # cannot offer delta updates, which need the previous archives present here. The fix in both
+      # cases is to download the prior release's archives into `artifacts/` before this step.
+      # ---------------------------------------------------------------------------------------
+      - name: Generate the signed appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # No `| head -1`: that is the same SIGPIPE-under-pipefail hazard avoided in the
+          # codesign and `gh release view` steps. `sed -n '1p'` has no `q`, so it reads its
+          # input to the end and cannot signal the producer.
+          GENERATE_APPCAST=$(find DerivedData/SourcePackages/artifacts -type f -name generate_appcast -perm -u+x 2>/dev/null || true)
+          GENERATE_APPCAST=$(printf '%s\n' "$GENERATE_APPCAST" | sed -n '1p')
+          [ -n "$GENERATE_APPCAST" ] \
+            || { echo "::error::generate_appcast not found in the resolved SwiftPM artifact store — a SwiftPM layout change or an upstream packaging change; find where the verified tool lives now rather than downloading one"; exit 1; }
+          echo "Using $GENERATE_APPCAST"
+
+          # Release notes for the in-app update pane. generate_appcast picks up an .html file
+          # whose basename matches the archive; with --embed-release-notes it inlines it into the
+          # feed's <description> — without any notes, Sparkle shows a blank "what's new".
+          # Embedded rather than linked on purpose: the link form resolves against the feed URL
+          # (…/releases/latest/download/…), which breaks for this entry as soon as a newer release
+          # becomes "latest", and it would need the .html uploaded as a release asset. The
+          # GitHub-generated notes don't exist yet here (the release is created below), so the
+          # embedded blurb links out to them.
+          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
+          cat > "artifacts/Speech2Text-${VERSION}.html" <<HTML
+          <!DOCTYPE html>
+          <html><head><meta charset="utf-8"></head><body>
+          <h2>Speech2Text ${VERSION}</h2>
+          <p>See the <a href="${RELEASE_URL}">full release notes on GitHub</a>.</p>
+          </body></html>
+          HTML
+
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$GENERATE_APPCAST" \
+            --ed-key-file - \
+            --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
+            --full-release-notes-url "https://github.com/${GITHUB_REPOSITORY}/releases" \
+            --embed-release-notes \
+            -o artifacts/appcast.xml \
+            artifacts
+
+          # The feed must actually list this version, and must carry a signature.
+          grep -q "Speech2Text-${VERSION}.zip" artifacts/appcast.xml \
+            || { echo "::error::appcast.xml does not reference Speech2Text-${VERSION}.zip"; cat artifacts/appcast.xml; exit 1; }
+          grep -q 'edSignature=' artifacts/appcast.xml \
+            || { echo "::error::appcast.xml carries no EdDSA signature"; cat artifacts/appcast.xml; exit 1; }
+          grep -q '<description>' artifacts/appcast.xml \
+            || { echo "::error::appcast.xml has no embedded release notes — Sparkle would show a blank what's-new pane"; cat artifacts/appcast.xml; exit 1; }
+          cat artifacts/appcast.xml
+
+      # ---------------------------------------------------------------------------------------
+      # Publish. Draft first, flip last — see the header.
+      # ---------------------------------------------------------------------------------------
+      - name: Create draft release and upload assets
+        id: create_draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Re-running after a failure must not trip over a half-built draft.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft)" = "true" ]; then
+              echo "Deleting stale draft for $GITHUB_REF_NAME"
+              gh release delete "$GITHUB_REF_NAME" --yes
+            else
+              echo "::error::$GITHUB_REF_NAME is already published — refusing to overwrite a live release"
+              exit 1
+            fi
+          fi
+
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --title "Speech2Text ${VERSION}" \
+            --generate-notes \
+            "dist/Speech2Text-${VERSION}.dmg" \
+            "artifacts/Speech2Text-${VERSION}.zip" \
+            "artifacts/appcast.xml" \
+            "dsyms/Speech2Text-${VERSION}-dSYMs.zip"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # `--latest` matters: the feed URL is `releases/latest/download/appcast.xml`, and the
+          # latest redirect skips drafts and prereleases. But claim it only if this really IS the
+          # newest release — two tags can be in flight at once (see the concurrency note at the
+          # top), and the run that finishes last must not drag the feed back to an older build.
+          # Only version tags take part in the comparison: a single non-version release tag
+          # (say "nightly") would otherwise sort above every vX.Y.Z and permanently pin HIGHEST
+          # elsewhere, so every future release would publish with --latest=false and the feed
+          # would freeze — visible only as a warning on an otherwise green job.
+          # Drafts AND prereleases are excluded: GitHub's `latest` redirect skips both, so a
+          # published prerelease must not veto this release's claim to the flag — that would
+          # freeze the feed on an older build while the job stayed green.
+          #
+          # NO `|| true` here, deliberately: an empty list is indistinguishable from a transient
+          # API error, and guessing "there is nothing newer" is exactly how an older concurrent
+          # release would steal `--latest` and drag the feed backwards. Failing leaves an
+          # invisible draft — `releases/latest` keeps serving the previous good release — and the
+          # alarm below says to re-run.
+          if ! PUBLISHED=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease \
+            -q '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' 2>&1); then
+            echo "::error::could not list releases, so it is unknown whether ${GITHUB_REF_NAME} should take the latest flag. Refusing to guess: re-run this workflow. (gh said: ${PUBLISHED})"
+            exit 1
+          fi
+          HIGHEST=$(printf '%s\n%s\n' "$PUBLISHED" "$GITHUB_REF_NAME" \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          if [ "$HIGHEST" = "$GITHUB_REF_NAME" ]; then
+            gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          else
+            echo "::warning::${GITHUB_REF_NAME} is published but NOT marked latest — ${HIGHEST} is already released, and taking the latest flag would point the update feed at an older build. This release is therefore absent from the live appcast, by design. If that is wrong, fix it with: gh release edit ${GITHUB_REF_NAME} --latest"
+            gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false
+          fi
+          # The list-then-edit above is not atomic: a concurrent publish can move the flag in
+          # the gap. Re-check and report — better a warning with the exact fix than a feed that
+          # silently serves an older build.
+          FINAL=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease \
+            -q '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' 2>/dev/null || true)
+          FINAL_HIGHEST=$(printf '%s\n' "$FINAL" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          ACTUAL_LATEST=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" -q .tag_name 2>/dev/null || true)
+          if [ -n "$ACTUAL_LATEST" ] && [ -n "$FINAL_HIGHEST" ] && [ "$ACTUAL_LATEST" != "$FINAL_HIGHEST" ]; then
+            echo "::warning::releases/latest points at ${ACTUAL_LATEST}, but the highest published version is ${FINAL_HIGHEST} — the update feed is serving an older build (two publishes probably interleaved). Fix with: gh release edit ${FINAL_HIGHEST} --latest"
+          fi
+
+          echo "Published $GITHUB_REF_NAME"
+          echo "Spot-check: curl -sL https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/appcast.xml"
+
+      # A release left as a draft is invisible to `releases/latest`, so installed apps silently
+      # stop seeing updates. Fail loudly rather than leaving that state unnoticed.
+      - name: Alarm if the release is stranded as a draft
+        if: always() && steps.create_draft.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Captured, not piped into `grep -q` — see the hardened-runtime check for why. And no
+          # blanket `|| true`: that would make an API error indistinguishable from "not a draft",
+          # letting the job go green with the release stranded and the feed frozen — the same
+          # fail-open hazard the publish step above refuses to accept.
+          if ! IS_DRAFT=$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft 2>&1); then
+            case "$IS_DRAFT" in
+              *"release not found"*|*"Not Found"*)
+                # Nothing was ever created (an early failure, e.g. preflight) — nothing stranded.
+                IS_DRAFT="false" ;;
+              *)
+                echo "::error::could not read ${GITHUB_REF_NAME}'s release state, so it is UNKNOWN whether it is stranded as a draft. Check by hand: gh release view ${GITHUB_REF_NAME}. (gh said: ${IS_DRAFT})"
+                exit 1 ;;
+            esac
+          fi
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "::error::${GITHUB_REF_NAME} is stranded as a DRAFT release — the update feed cannot see it, so installed apps have silently stopped seeing updates. RE-RUN this workflow to recover: it deletes the stale draft and rebuilds every asset. Do NOT simply flip this draft to published unless you have confirmed it carries appcast.xml, the .zip and the .dmg — the feed URL is releases/latest/download/appcast.xml, so publishing an incomplete draft makes the feed 404 for every installed copy."
+            exit 1
+          fi
+
+      - name: Clean up secrets and keychain
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/asc.p8" "$RUNNER_TEMP/devid.p12" "$RUNNER_TEMP/notarize.zip" || true
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi

@@ -19,7 +19,7 @@ powered by [WhisperKit](https://github.com/argmaxinc/WhisperKit) and OpenAI's Wh
 - **Multi-language** support with auto-detect (English, German, Russian, French, Spanish, Italian, Portuguese, Japanese, Chinese, Ukrainian)
 - **Multiple Whisper models** — choose between Tiny, Base, Small, and Large V3 Turbo to balance speed vs. accuracy
 - **Video support** — automatically extracts audio from `mp4`, `mov`, `m4v`
-- **100% offline** — audio never leaves your machine; models run on-device via Core ML
+- **100% offline transcription** — audio never leaves your machine; models run on-device via Core ML. The app reaches the network only to download a Whisper model the first time you use it and to check for updates (turn that off in **Settings → Updates**).
 - **Batch transcription** of multiple files at once
 
 ## Supported Formats
@@ -32,7 +32,7 @@ powered by [WhisperKit](https://github.com/argmaxinc/WhisperKit) and OpenAI's Wh
 
 **To run the app:**
 - macOS 26 (Tahoe) or later
-- Apple Silicon recommended (Whisper models run on the Neural Engine / GPU)
+- Apple Silicon required — the app ships as an arm64-only build (Whisper models run on the Neural Engine / GPU)
 
 **To build the app:**
 - macOS 26 (Tahoe)
@@ -118,6 +118,24 @@ Then restart the LSP server as above. To confirm the module made it in: `python3
 
 > The first transcription with a new model can take a while as the model is downloaded and compiled for your device.
 
+## Installing & updates
+
+Download `Speech2Text-X.Y.Z.dmg` from the
+[Releases page](https://github.com/popavel/speech2text/releases), open it, and drag
+`Speech2Text.app` into `/Applications`. Releases are Developer ID-signed and notarized, so
+Gatekeeper opens them without ceremony — no right-click-Open, no `xattr` incantation.
+
+The app keeps itself up to date with [Sparkle](https://sparkle-project.org): it checks for new
+versions about once a day (opt out in **Settings → Updates**), and you can check any time with
+**Speech2Text → Check for Updates…**. Every update's EdDSA signature is verified before it is
+installed.
+
+> A `.zip` of the same build is attached to each release — that is the archive Sparkle downloads
+> for updates. The `.dmg` is the one to grab for a first install.
+
+The maintainer release process — version bumps, tagging, and the publish workflow — is documented
+in [AGENTS.md](AGENTS.md) ("Distribution & updates").
+
 ## Uninstalling
 
 macOS has no uninstaller hook — an app can't run cleanup code once it's been dragged to the Trash — so removing Speech2Text is two steps:
@@ -145,13 +163,17 @@ Being non-sandboxed, Speech2Text writes nothing under `~/Library/Containers/`.
 
 ```
 Speech2Text/
-├── Speech2TextApp.swift       # App entry point
-├── ContentView.swift          # SwiftUI UI
-└── TranscriptionManager.swift # WhisperKit integration & audio extraction
-project.yml                    # XcodeGen config
-Info.plist
-Speech2Text.entitlements
-ci.yml                         # GitHub Actions workflow
+├── Speech2TextApp.swift        # App entry point (scenes, menu commands)
+├── ContentView.swift           # SwiftUI UI (incl. SettingsView)
+├── TranscriptionManager.swift  # WhisperKit integration & audio extraction
+├── Updater.swift               # Sparkle auto-update seam
+├── AboutView.swift             # About panel window
+├── HelpView.swift              # In-app help book (incl. the uninstall guide)
+└── speech2text.icon            # App icon (Icon Composer package)
+project.yml                     # XcodeGen config — targets, packages, versions
+Info.plist                      # Bundle keys + Sparkle SU* keys
+Speech2Text.entitlements        # Not sandboxed
+.github/workflows/              # CI + the release pipeline
 ```
 
 ## CI
@@ -161,8 +183,10 @@ GitHub Actions workflows live in `.github/workflows/`:
 - `release.yml` — runs on `release/**` branches
 - `main.yml` — builds & tests on pushes / PRs to `main`
 - `feature.yml` — runs on `feature/**` branches
+- `publish-release.yml` — on a `vX.Y.Z` tag: notarized DMG + ZIP + Sparkle appcast → GitHub Release
 
-All three pin Xcode 26.4.1 on a `macos-26` runner and use the same build/test steps.
+The first three pin Xcode 26.4.1 on a `macos-26` runner and use the same build/test steps;
+`publish-release.yml` gates on that same build/test job before it signs anything.
 
 See [.github/workflows/README.md](.github/workflows/README.md) for a per-workflow overview
 (including the Claude automation) and its known limitations, and
@@ -174,10 +198,11 @@ the commit-guard hooks — and its caveats.
 Speech2Text is open source under the [MIT License](LICENSE) — you are free to
 use, modify, and redistribute the source.
 
-The official, ready-to-use build will be sold on the Mac App Store. Releasing
-the source under MIT does not conflict with that: an open source license grants
-rights to *others*, while the copyright holder retains full rights to the work,
-including the right to sell binaries.
+Official, ready-to-use builds are distributed directly — Developer ID-signed and
+notarized — from the [Releases page](https://github.com/popavel/speech2text/releases)
+and the project website. Releasing the source under MIT does not constrain how
+those builds are distributed: an open source license grants rights to *others*,
+while the copyright holder retains full rights to the work.
 
 Third-party components and their licenses are listed in
 [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).

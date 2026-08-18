@@ -9,10 +9,39 @@ options:
   deploymentTarget:
     macOS: "26.0"
   groupSortPosition: top
+# App-wide settings, project-level so every target inherits one definition.
+settings:
+  base:
+    # Release ritual: bump BOTH to the same X.Y.Z. They are deliberately identical —
+    # Sparkle orders releases by CFBundleVersion (its comparator handles dotted triples),
+    # and AboutView collapses the display to "Version X.Y.Z" when build == short.
+    # 0.x.y is the pre-release series; 1.0.0 and up are reserved for user-facing releases.
+    MARKETING_VERSION: "0.0.0"
+    CURRENT_PROJECT_VERSION: "0.0.0"
+    # One Swift version for every target; a language bump is a one-line edit here.
+    SWIFT_VERSION: "6.0"
+    # Apple Silicon only, stated rather than inherited: Xcode's ARCHS_STANDARD default would
+    # build arm64 + x86_64. macOS 26 is the last release supporting Intel and reaches only a
+    # handful of 2019-20 models, none of which have a Neural Engine — and this app IS local
+    # Whisper inference, so the x86_64 slice would ship a bad experience to a shrinking
+    # audience while doubling every compile. Decided before 1.0.0 shipped, deliberately:
+    # once an arm64+x86_64 build has an installed base, Sparkle's appcast has no clean way to
+    # stop offering an arm64-only update to an Intel user. Debug already sets
+    # ONLY_ACTIVE_ARCH, so this only changes Release (and CI).
+    ARCHS: arm64
 packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: "1.0.0"
+  # Auto-update framework (binary xcframework; Xcode links and embeds it automatically). This zip
+  # also carries Sparkle's CLI tools, which is where publish-release.yml gets `generate_appcast` —
+  # SwiftPM verifies the whole artifact against the checksum in Sparkle's Package.swift, so the
+  # appcast tooling is both integrity-checked and impossible to skew from the framework. Never
+  # re-add a tarball download: Sparkle's release tarballs are ad-hoc signed, so a download can't
+  # be verified and would hand the EdDSA signing secret to unauthenticated code.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.9.4"
   # Test-only: runtime introspection of SwiftUI view bodies. Linked into the
   # unit-test bundle only — never into the app target.
   ViewInspector:
@@ -22,19 +51,30 @@ targets:
   Speech2Text:
     type: application
     platform: macOS
-    sources: [Speech2Text]
+    sources:
+      - Speech2Text
+      # Ships INSIDE the app bundle, not just in the repo: WhisperKit (MIT), the
+      # swift-transformers code it vendors (Apache-2.0) and Sparkle (MIT, plus its own vendored
+      # bsdiff/sais/Ed25519 notices) are all redistributed in the binary, and those licenses
+      # require their notices to travel with it. Explicit `buildPhase` because a .md would
+      # otherwise be inferred as a non-bundled source file.
+      - path: THIRD-PARTY-LICENSES.md
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.app
         ASSETCATALOG_COMPILER_APPICON_NAME: speech2text
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: Info.plist
         CODE_SIGN_ENTITLEMENTS: Speech2Text.entitlements
-        SWIFT_VERSION: "6.0"
+    # Signing settings deliberately absent: CODE_SIGN_STYLE / CODE_SIGN_IDENTITY /
+    # DEVELOPMENT_TEAM / ENABLE_HARDENED_RUNTIME are injected on the xcodebuild command line by
+    # publish-release.yml alone, so local dev and every CODE_SIGNING_ALLOWED=NO CI build are
+    # untouched by the release configuration.
     dependencies:
       - package: WhisperKit
         product: WhisperKit
+      - package: Sparkle
+        product: Sparkle
     scheme:
       testTargets:
         - Speech2TextTests
@@ -52,7 +92,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.tests
-        SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: Speech2Text
@@ -75,7 +114,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.integrationtests
-        SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: Speech2Text
@@ -91,7 +129,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.speech2text.uitests
-        SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: Speech2Text
         # XcodeGen's test-target preset injects BUNDLE_LOADER = "$(TEST_HOST)", which

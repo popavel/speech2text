@@ -130,6 +130,7 @@ Three Swift files do all the real work; the UI is intentionally thin.
 - [Speech2Text/TranscriptionManager.swift](Speech2Text/TranscriptionManager.swift) — the brain. `@MainActor @Observable` class holding all app state. Owns the `WhisperKit` instance, lazily (re)loads it when `selectedModel` changes, and drives a `TranscriptionStatus` state machine (`idle → loadingModel → transcribing(progress) → completed | error`). For video files it routes through `extractAudio(...)` which uses `AVAssetExportSession` to write a temp `.m4a` before handing the path to WhisperKit. Supported extensions are declared as `nonisolated static` sets on this type — the UI reads from these, so changes propagate everywhere.
 - [Speech2Text/ContentView.swift](Speech2Text/ContentView.swift) — SwiftUI view that reads/writes `TranscriptionManager` state. No business logic; drag-and-drop, file picker, language/model pickers, and the result `TextEditor` all bind directly to the manager.
 - [Speech2Text/Speech2TextApp.swift](Speech2Text/Speech2TextApp.swift) — app entry point.
+- [Speech2Text/Updater.swift](Speech2Text/Updater.swift) — the Sparkle auto-update seam (see "Distribution & updates" below). Views depend on the `UpdaterModel` protocol, never on Sparkle.
 
 **State flow** is one-way: UI mutates `selectedLanguage`/`selectedModel`/`droppedFileURLs`, calls `startTranscription()`, then renders from `status` + `transcriptionResult`. Don't add parallel state in views.
 
@@ -137,8 +138,117 @@ Three Swift files do all the real work; the UI is intentionally thin.
 
 **WhisperKit dependency** in `project.yml` tracks the latest release via `from: "1.0.0"` (SwiftPM up-to-next-major — newest `1.x` release, never a breaking `2.0`). Major bumps are manual; the weekly drift check covers `1.x` drift. Be aware when debugging upstream API drift.
 
+## Distribution & updates
+
+Speech2Text ships through **one channel**: a direct download from
+[GitHub Releases](https://github.com/popavel/speech2text/releases) and the project website,
+Developer ID-signed, hardened-runtime, notarized and stapled, self-updating via **Sparkle 2**
+against an EdDSA-signed appcast. There is deliberately no Mac App Store build, and therefore no
+second app target, no sandbox entitlements, and no `SPARKLE_ENABLED` compile condition — Sparkle
+compiles unconditionally because nothing has to be built without it. (An earlier, unmerged
+experiment carried a dual-channel setup; going App-Store-free is what makes all that scaffolding
+unnecessary. Don't reintroduce it without a channel that needs it.)
+
+Things that keep this sane — don't undo them:
+
+- **[Updater.swift](Speech2Text/Updater.swift) seam.** Views depend on the `UpdaterModel`
+  protocol, never on Sparkle. `SparkleUpdaterModel` has **three initializers** on purpose: the
+  production `init(startingUpdater:)` is the only one that *constructs* a Sparkle object; the test
+  door `init(updater:)` names no Sparkle type at all, so it structurally cannot bring an
+  `SPUUpdater`/`SUHost` into existence; and one private designated init holds everything
+  downstream of "which driver do I have", so the injected path and the shipping path execute the
+  same lines. Don't collapse them — the guarantee then moves from the compiler to branch ordering.
+- **Never construct a real `SPUUpdater` in tests** — started or not. It binds an `SUHost` to the
+  app's `.standard` defaults domain, which the in-process test host shares with the developer's
+  real installed app. Unit tests run *inside* the app here (test host = the app, so
+  `Speech2TextApp.init` executes on every test run).
+- **Only Release builds update.** `SparkleUpdaterModel.shouldStartUpdater()` returns false for
+  **any Debug build** — a `⌘R` run is not a shipped app, and starting Sparkle there writes
+  `SULastCheckTime` and friends into the real `com.speech2text.app` defaults domain; worse, a
+  working tree's `CURRENT_PROJECT_VERSION` trails the published feed head, so Sparkle would
+  eventually offer to replace the DerivedData build with a download. The `-uiTesting` and XCTest
+  marker checks sit behind that as belt-and-braces for a suite run against Release. `isDebugBuild`
+  is an injectable parameter rather than a `#if` in the body, so
+  [UpdaterTests.swift](Speech2TextTests/UpdaterTests.swift) can test **both** answers from a test
+  run that is itself always Debug — including the one combination that ships.
+- **`automaticallyChecksForUpdates` is explicit storage + write-through, NOT a `didSet` mirror** —
+  under `@Observable`, init-time assignment runs the setter, which would write
+  `SUEnableAutomaticChecks` into the shared domain during the test host's app init. A KVO
+  observation mirrors Sparkle-side writes back so the Settings toggle can't go stale — scoped to
+  writes *through the property* (Sparkle's own permission UI), not to arbitrary `defaults write`
+  changes of the underlying key, which emit no KVO and are knowingly unhandled.
+- **Both KVO mirrors seed by direct read and re-read on change — never `MainActor.assumeIsolated`.**
+  Of the `SPUUpdater` properties this model touches, `canCheckForUpdates` is the one Sparkle's
+  header does *not* document as main-thread-only (`automaticallyChecksForUpdates`,
+  `automaticallyDownloadsUpdates` and `updateCheckInterval` all say "must be called on the main
+  thread"; it doesn't). `assumeIsolated` on an off-main delivery would **trap and kill the shipped
+  app**, and no test could catch it because a fake only ever mutates on the main actor. So both
+  observations hop with `Task { @MainActor }` and re-read the live value on arrival — which also
+  means an out-of-order hop can't apply a stale value.
+- **The update RELAUNCH is postponed while the app is busy — not the check.** `UpdaterDelegate`
+  implements `updater(_:shouldPostponeRelaunchForUpdate:untilInvokingBlock:)`, deferring the
+  install until `isProcessing`/`isRemovingData` clears, because relaunching mid-run destroys an
+  in-memory transcript and relaunching mid-wipe leaves a half-deleted cache. **Don't "improve"
+  this by refusing the check** (`updater(_:mayPerform:)`) instead: Sparkle records a refused check
+  as a completed one (`abortUpdateDriver` calls `updateLastUpdateCheckDate`, rescheduling with
+  `usingCurrentDate:NO`), so a user who happens to be transcribing at check time has updates
+  pushed a further ~24h out every time — and it still wouldn't cover the real hazard, an alert
+  raised while idle and accepted seconds after work starts. Note the selector's Swift label is
+  `untilInvokingBlock:`; `untilInvoking:` compiles cleanly, only "nearly matches" the optional
+  requirement, and is never called. The delegate is held strongly by the model
+  (`SPUStandardUpdaterController` keeps it weakly).
+
+  **It is a mitigation, not a guarantee.** Sparkle's own header says the hook is skipped when the
+  user declined to relaunch on a previous update (it restarts immediately) and may be skipped when
+  the app isn't going to relaunch at all. A user in either state who accepts an update
+  mid-transcription still loses the in-memory transcript. The real fix is to stop treating the
+  transcript as unrecoverable — persist it, or warn before discarding it — which would also cover
+  the plain quit case that already loses it today. Not done here.
+- **Sparkle owns its preferences** (`SUEnableAutomaticChecks`, `SULastCheckTime`, …) in the app's
+  defaults domain, deliberately **outside** `TranscriptionManager.Keys.all` — so "Remove All App
+  Data" and "Restore Default Settings" leave them alone.
+- **Every channel fact is checked on the ARTIFACT, not only the source.** A source guard proves
+  what the repo says; only a product-level one proves what ships. `publish-release.yml` re-reads
+  the built bundle's versions, hardened-runtime flag, sandbox state, embedded `Sparkle.framework`,
+  and `SUFeedURL`/`SUPublicEDKey` — because a build that silently lost its feed URL launches
+  clean, never updates, and becomes the permanent feed head.
+- **Version lockstep.** `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` live at **project level**
+  in [project.yml](project.yml) and are always bumped **together to the same `X.Y.Z`** (Sparkle
+  orders by `CFBundleVersion`; `AboutView` collapses the display when build == short). The publish
+  workflow hard-fails when the pushed tag doesn't equal them. **`0.x.y` is the pre-release series;
+  `1.0.0` and above are reserved for the first genuinely user-facing release.**
+- **Sparkle version skew is impossible by construction**: `publish-release.yml` runs
+  `generate_appcast` straight out of the resolved SwiftPM package store
+  (`DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/`) — Sparkle ships its CLI tools
+  inside the same zip the framework comes from, which SwiftPM fetches for a
+  `binaryTarget(checksum:)` and rejects on a SHA-256 mismatch. So the tool that receives the EdDSA
+  private key is the exact artifact the app embeds, integrity-checked. **Never re-download it** —
+  Sparkle's release tarballs are ad-hoc signed, so a download can't be verified and would hand a
+  signing secret to unauthenticated code.
+- **The ZIP and the DMG live in separate directories.** `generate_appcast` treats *every archive
+  in its input directory* as an update entry, so `artifacts/` holds only the Sparkle zip (and the
+  appcast); the DMG goes to `dist/` and the dSYMs to `dsyms/`.
+
+**Release runbook:** bump both versions in `project.yml` → `/precommit` → PR → merge to `main` →
+`git tag vX.Y.Z && git push origin vX.Y.Z` → `publish-release.yml` runs (preflight, build+test
+gate, sign, verify product, notarize, staple, zip, DMG, appcast, draft release, publish) →
+spot-check `curl -sL https://github.com/popavel/speech2text/releases/latest/download/appcast.xml`.
+The workflow uploads assets onto a *draft* release and flips it to published only once complete
+(so the `latest` feed never sees a half-uploaded release) — but **never leave a release
+draft/prerelease**: the `latest` redirect skips those and installed apps silently stop seeing
+updates. A final `always()` step alarms if that happens.
+
+**One-time secrets** (all already set on the repo): `SPARKLE_ED_PRIVATE_KEY` (from Sparkle's
+`generate_keys -x`; the public half is `SUPublicEDKey` in [Info.plist](Info.plist) — losing the
+private key strands every installed copy, keep the Keychain + secret copies),
+`DEVID_CERT_P12_BASE64`/`DEVID_CERT_PASSWORD` (Developer ID Application cert), `APPLE_TEAM_ID`,
+and `ASC_KEY_ID`/`ASC_ISSUER_ID`/`ASC_API_KEY_P8` (App Store Connect API key — still needed with
+no App Store channel, because `notarytool` authenticates with it).
+
 ## Platform constraints
 
-- Swift 6 strict concurrency is on. `TranscriptionManager` is `@MainActor`; WhisperKit is imported `@preconcurrency`. New async code crossing the actor boundary needs to respect this.
+- Swift 6 strict concurrency is on. `TranscriptionManager` is `@MainActor`; WhisperKit and Sparkle are imported `@preconcurrency`. New async code crossing the actor boundary needs to respect this.
+- **Apple Silicon only.** `ARCHS: arm64` is pinned at project level in [project.yml](project.yml) rather than left to Xcode's `ARCHS_STANDARD` (which would add an x86_64 slice). macOS 26 is the last release supporting Intel and reaches only a handful of 2019–20 models, none with a Neural Engine — and this app *is* local Whisper inference. Chosen before 1.0.0 shipped on purpose: once a universal build has an installed base, Sparkle's appcast has no clean way to stop offering an arm64-only update to an Intel user.
+- **Signing settings live on the `xcodebuild` command line, not in `project.yml`.** `CODE_SIGN_STYLE`, `CODE_SIGN_IDENTITY`, `DEVELOPMENT_TEAM` and `ENABLE_HARDENED_RUNTIME` are injected by `publish-release.yml` alone, so local development and every `CODE_SIGNING_ALLOWED=NO` CI build stay untouched by the release configuration.
 - Deployment target is **macOS 26 (Tahoe)** — APIs like `AVAssetExportSession.export(to:as:)` and the `@Observable` macro require this. Don't lower without updating `project.yml` and regenerating.
 - CI pins Xcode **26.4.1** on `macos-26` runners ([.github/workflows/](.github/workflows/) — `main.yml`, `feature.yml`, `release.yml` are near-identical, gated by branch pattern).

@@ -65,6 +65,13 @@ struct AboutViewTests {
                 text.contains("argmax")
             })
         }
+        // Sparkle ships inside the binary too, so its credit belongs here — see
+        // THIRD-PARTY-LICENSES.md.
+        #expect(throws: Never.self) {
+            try view.inspect().find(textWhere: { text, _ in
+                text.contains("Sparkle")
+            })
+        }
         #expect(throws: Never.self) {
             try view.inspect().find(text: "OpenAI Whisper")
         }

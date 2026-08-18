@@ -63,12 +63,14 @@ struct AboutView: View {
 
             // Credits for the open-source components that ship inside the app binary (WhisperKit and
             // its vendored swift-transformers); OpenAI's Whisper is the underlying model. The full
-            // license texts live in THIRD-PARTY-LICENSES.md at the repo root.
+            // license texts live in THIRD-PARTY-LICENSES.md, which ships inside the app bundle
+            // (Contents/Resources) as well as at the repo root — see project.yml.
             VStack(alignment: .leading, spacing: 4) {
                 Text("Acknowledgements")
                     .font(.subheadline).bold()
                 Text("WhisperKit — MIT License (© 2024 argmax, inc.)")
                 Text("swift-transformers — Apache-2.0 License (© 2022 Hugging Face SAS)")
+                Text("Sparkle — MIT License (© 2006–2017 Andy Matuschak and contributors)")
                 Text("OpenAI Whisper")
             }
             .font(.caption)

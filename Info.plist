@@ -4,6 +4,14 @@
 <dict>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<!-- Explicit because this is a manual INFOPLIST_FILE (no GENERATE_INFOPLIST_FILE), which
+	     xcodebuild does NOT auto-populate — same reason CFBundleIdentifier is explicit above.
+	     Without them the bundle carries no executable/package-type declaration and PkgInfo comes
+	     out as "????????". Macros rather than literals so they track the build settings. -->
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Speech2Text</string>
 	<key>CFBundleName</key>
@@ -14,5 +22,22 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<!-- Sparkle. The feed URL uses GitHub's stable latest-release-asset redirect: every release
+	     created by publish-release.yml attaches a freshly generated, EdDSA-signed appcast.xml.
+	     This URL is baked into every shipped binary and is effectively permanent — changing it
+	     strands every copy installed before the change. -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/popavel/speech2text/releases/latest/download/appcast.xml</string>
+	<!-- Public half of the Sparkle EdDSA keypair (generate_keys; the private half lives in the
+	     maintainer's Keychain and the SPARKLE_ED_PRIVATE_KEY repo secret). Updates are rejected
+	     unless signed by the matching private key. -->
+	<key>SUPublicEDKey</key>
+	<string>/R4d1Sr+880QpYA/a5/P9OjM7MY6QiYq91qruQjeHJs=</string>
+	<!-- Auto-check on launch (~daily, Sparkle's default interval) without Sparkle's second-launch
+	     permission prompt; the Settings "Updates" toggle is the per-user opt-out. -->
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>

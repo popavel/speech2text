@@ -15,6 +15,15 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 
+# Release artifacts (publish-release.yml builds these in CI; a local release
+# rehearsal produces them here). See AGENTS.md "Distribution & updates".
+*.dmg
+artifacts/
+dist/
+dsyms/
+dsymstage/
+dmgroot/
+
 # SourceKit-LSP / xcode-build-server (machine-specific)
 buildServer.json
 .compile

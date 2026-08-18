@@ -160,7 +160,7 @@ struct SettingsViewTests {
 
     @Test("Remove All App Data is enabled at rest")
     func removeAllDataEnabledAtRest() throws {
-        let view = SettingsView(manager: makeManager())
+        let view = SettingsView(manager: makeManager(), updater: FakeUpdater())
         let button = try view.inspect().find(viewWithAccessibilityIdentifier: "removeAllDataButton")
         // Unlike Delete Downloaded Models, the wipe isn't gated on a non-empty cache: settings
         // persist even with no models, so it must stay available.
@@ -171,8 +171,67 @@ struct SettingsViewTests {
     func removeAllDataDisabledWhileProcessing() throws {
         let manager = makeManager()
         manager.status = .transcribing(progress: 0.5)
-        let view = SettingsView(manager: manager)
+        let view = SettingsView(manager: manager, updater: FakeUpdater())
         let button = try view.inspect().find(viewWithAccessibilityIdentifier: "removeAllDataButton")
         #expect(button.isDisabled())
+    }
+
+    @Test("The auto-update toggle is live when an updater is driving it")
+    func autoUpdateToggleEnabledWhenActive() throws {
+        let view = SettingsView(manager: makeManager(), updater: FakeUpdater(isActive: true))
+        let toggle = try view.inspect()
+            .find(viewWithAccessibilityIdentifier: "automaticUpdatesToggle")
+        #expect(!toggle.isDisabled())
+    }
+
+    @Test("The auto-update toggle is disabled in a gated (development) build")
+    func autoUpdateToggleDisabledWhenInactive() throws {
+        // Gated processes have no updater behind the toggle, so a write would be silently dropped
+        // on the next launch — the control must not look live.
+        let view = SettingsView(manager: makeManager(), updater: FakeUpdater(isActive: false))
+        let toggle = try view.inspect()
+            .find(viewWithAccessibilityIdentifier: "automaticUpdatesToggle")
+        #expect(toggle.isDisabled())
+        #expect(try captionText(of: view).contains("disabled in development builds"))
+    }
+
+    @Test("The Updates caption stops promising a daily check once auto-checks are off")
+    func updatesCaptionTracksTheToggle() throws {
+        let on = SettingsView(
+            manager: makeManager(),
+            updater: FakeUpdater(automaticallyChecksForUpdates: true)
+        )
+        #expect(try captionText(of: on).contains("about once a day"))
+
+        // The caption must follow the toggle, not just `isActive` — otherwise it keeps claiming a
+        // daily check the user has switched off.
+        let off = SettingsView(
+            manager: makeManager(),
+            updater: FakeUpdater(automaticallyChecksForUpdates: false)
+        )
+        #expect(try captionText(of: off).contains("Automatic checks are off"))
+    }
+
+    @Test("Flipping the auto-update toggle writes back to the updater")
+    func autoUpdateToggleWritesThrough() throws {
+        // The Binding's `set` half is the only path that persists the user's opt-out. Without
+        // this, gutting it leaves every other test green while the preference silently never
+        // sticks — the same class of regression the model's write-through test guards.
+        let updater = FakeUpdater(automaticallyChecksForUpdates: true)
+        let view = SettingsView(manager: makeManager(), updater: updater)
+
+        try view.inspect()
+            .find(viewWithAccessibilityIdentifier: "automaticUpdatesToggle")
+            .toggle()
+            .tap()
+
+        #expect(!updater.automaticallyChecksForUpdates)
+    }
+
+    private func captionText(of view: SettingsView) throws -> String {
+        try view.inspect()
+            .find(viewWithAccessibilityIdentifier: "updatesCaption")
+            .text()
+            .string()
     }
 }
