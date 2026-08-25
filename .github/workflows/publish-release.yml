@@ -537,23 +537,55 @@ jobs:
 
       # A release left as a draft is invisible to `releases/latest`, so installed apps silently
       # stop seeing updates. Fail loudly rather than leaving that state unnoticed.
+      # Gate on "did create_draft RUN", not "did it SUCCEED". `gh release create` above creates
+      # the release and uploads all four assets in ONE command, so a network blip on the ~200MB
+      # DMG leaves the release created and the step `failure` — the exact state this alarm exists
+      # to catch, which `== 'success'` skipped straight past. `!= 'skipped'` also keeps the alarm
+      # off runs where an earlier step (preflight, notarization) failed and nothing was ever
+      # created; if the steps context has no entry at all there, the empty string is not
+      # 'skipped', the alarm runs anyway, and the not-found branch below settles it correctly.
       - name: Alarm if the release is stranded as a draft
-        if: always() && steps.create_draft.outcome == 'success'
+        if: always() && steps.create_draft.outcome != 'skipped'
         env:
           GH_TOKEN: ${{ github.token }}
+          CREATE_DRAFT_OUTCOME: ${{ steps.create_draft.outcome }}
         run: |
           set -euo pipefail
           # Captured, not piped into `grep -q` — see the hardened-runtime check for why. And no
           # blanket `|| true`: that would make an API error indistinguishable from "not a draft",
           # letting the job go green with the release stranded and the feed frozen — the same
           # fail-open hazard the publish step above refuses to accept.
-          if ! IS_DRAFT=$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft 2>&1); then
-            case "$IS_DRAFT" in
+          #
+          # stderr goes to a FILE, never `2>&1` into the captured value. `2>&1` inside `$( )` is
+          # not scoped to the failure path — it merges stderr on the success path too, so any
+          # line gh writes while exiting 0 (a scope warning, a flag deprecation) would make
+          # IS_DRAFT "true\n<noise>", the `if !` branch would be skipped because the status was
+          # still 0, and the `= "true"` test below would silently miss. That is this file's last
+          # fail-closed guard going quiet at exactly the moment it is needed. The sibling capture
+          # in "Publish the release" survives the same noise only because it is filtered through
+          # `grep -E '^v[0-9]+…'`; there is no such filter here, so separate the streams instead.
+          GH_ERR="$RUNNER_TEMP/gh-release-view.err"
+          if ! IS_DRAFT=$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft 2>"$GH_ERR"); then
+            # Match on stderr, which is where gh puts these — previously reachable only via the
+            # merge. `2>` truncates, so the file is always this call's own output.
+            GH_SAID=$(cat "$GH_ERR" 2>/dev/null || true)
+            case "$GH_SAID" in
               *"release not found"*|*"Not Found"*)
+                # "Absent" is only believable if we never created it. GitHub answers 404 for a
+                # resource the token may not read, and the API is eventually consistent right
+                # after a write — so if create_draft SUCCEEDED, the release provably exists and
+                # a not-found here is a transient or permissions fault. Believing it would hand
+                # back "not stranded" for a draft that is sitting there stranded, which is the
+                # fail-open this whole step refuses. Only an unsuccessful create_draft (or no
+                # entry at all) makes "nothing was ever created" the honest reading.
+                if [ "${CREATE_DRAFT_OUTCOME:-}" = "success" ]; then
+                  echo "::error::gh reports ${GITHUB_REF_NAME} does not exist, but this run created it successfully — so this is a transient API error or a token permissions problem, not an absent release. Refusing to report it as not-stranded. Check by hand: gh release view ${GITHUB_REF_NAME}. (gh said: ${GH_SAID})"
+                  exit 1
+                fi
                 # Nothing was ever created (an early failure, e.g. preflight) — nothing stranded.
                 IS_DRAFT="false" ;;
               *)
-                echo "::error::could not read ${GITHUB_REF_NAME}'s release state, so it is UNKNOWN whether it is stranded as a draft. Check by hand: gh release view ${GITHUB_REF_NAME}. (gh said: ${IS_DRAFT})"
+                echo "::error::could not read ${GITHUB_REF_NAME}'s release state, so it is UNKNOWN whether it is stranded as a draft. Check by hand: gh release view ${GITHUB_REF_NAME}. (gh said: ${GH_SAID})"
                 exit 1 ;;
             esac
           fi
