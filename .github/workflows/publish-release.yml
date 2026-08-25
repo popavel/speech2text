@@ -76,11 +76,49 @@ jobs:
       # Preflight. Everything cheap that can invalidate the release, checked BEFORE the 20-minute
       # build and before any secret is written to disk.
       # ---------------------------------------------------------------------------------------
-      - name: Preflight — tag matches project.yml, Sparkle keys present and paired
+      - name: Preflight — secrets present, tag matches project.yml, Sparkle keys paired
         env:
+          # The secrets the presence check below asserts, exposed here purely so it can see them
+          # (DEVID_CERT_PASSWORD is not among them — see the check). APPLE_TEAM_ID, ASC_KEY_ID
+          # and ASC_ISSUER_ID have no other `env:` entry; their consuming steps interpolate them
+          # directly.
+          DEVID_CERT_P12_BASE64: ${{ secrets.DEVID_CERT_P12_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+
+          # Every secret this job needs, asserted HERE rather than at the step that happens to
+          # consume it. GitHub substitutes an EMPTY STRING for a secret that does not exist, so a
+          # renamed secret, a re-created repo, or a workflow_dispatch from an environment without
+          # them looks identical to a good run until: APPLE_TEAM_ID fails at codesign (~20m), the
+          # ASC_* trio at notarization (~25m), SPARKLE_ED_PRIVATE_KEY at generate_appcast (~45m,
+          # after two notarization round-trips — and note the keypair check below cannot catch
+          # that one, because an absent key decodes to 0 bytes and lands in its legacy-format
+          # branch, which exists to avoid accusing a VALID key of not matching).
+          # Collect ALL of them before reporting — one missing secret per re-tag is a miserable
+          # way to configure a repo. Names only, never values: these are masked in logs, and
+          # nothing here changes that.
+          # DEVID_CERT_PASSWORD is deliberately ABSENT from this list: a .p12 can legitimately
+          # be exported with an empty password, and `security import -P ""` accepts one — so
+          # here, unlike every other entry, "empty" is a valid configuration rather than a
+          # missing secret. It is also consumed before the build (~2m in), so it has nothing to
+          # gain from an early warning.
+          MISSING=""
+          for name in DEVID_CERT_P12_BASE64 APPLE_TEAM_ID \
+                      ASC_KEY_ID ASC_ISSUER_ID ASC_API_KEY_P8 SPARKLE_ED_PRIVATE_KEY; do
+            # Indirect expansion; the `-` default keeps `set -u` from firing on a name that is
+            # unset outright rather than empty. GitHub's default `run:` shell here is
+            # `bash -e {0}` (nothing in .github/workflows/ overrides `shell:`), so this is safe.
+            [ -n "${!name-}" ] || MISSING="$MISSING $name"
+          done
+          [ -z "$MISSING" ] || {
+            echo "::error::missing or empty repository secret(s):$MISSING — set them under Settings → Secrets and variables → Actions, then re-push the tag."
+            exit 1
+          }
 
           # STRICT vX.Y.Z, matching the regex the publish step uses to decide the `--latest`
           # flag. A looser glob here (e.g. accepting v1.2.3-beta) would pass preflight and then
