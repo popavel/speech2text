@@ -202,11 +202,23 @@ jobs:
           elif [ "$KEY_BYTES" != "32" ]; then
             echo "::warning::SPARKLE_ED_PRIVATE_KEY decodes to ${KEY_BYTES} bytes, not the 32-byte seed of Sparkle's current key format — SKIPPED the keypair check rather than risk a false mismatch. Re-export with a current generate_keys -x to enable it."
           else
+            # `|| true` keeps a derivation failure from killing the step under `set -euo
+            # pipefail` — but an empty result must NOT fall through to the mismatch branch below.
+            # A pkey flag rename, a dylib load failure, any OpenSSL packaging change: all produce
+            # an empty DERIVED_PUB, and reporting that as a mismatch tells the maintainer to
+            # rotate the signing key — the one action here that strands every installed copy.
+            # So keep openssl's own diagnostic, and treat "not a 44-char key" as a toolchain
+            # failure, distinct from "a key that doesn't match".
+            SSL_ERR="$RUNNER_TEMP/sparkle-pkey.err"
             DERIVED_PUB=$(
               { printf '302e020100300506032b657004220420' | xxd -r -p
                 printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | base64 -d
-              } | "$SSL" pkey -inform DER -pubout -outform DER 2>/dev/null | tail -c 32 | base64 || true
+              } | "$SSL" pkey -inform DER -pubout -outform DER 2>"$SSL_ERR" | tail -c 32 | base64 || true
             )
+            if [ "${#DERIVED_PUB}" -ne 44 ]; then
+              echo "::error::could not derive the public half of SPARKLE_ED_PRIVATE_KEY using $SSL ($SSL_VERSION): got ${#DERIVED_PUB} chars, expected 44. This is a TOOLCHAIN failure, not a key mismatch — do NOT rotate the Sparkle key on the strength of this message. openssl said: $(tr '\n' ' ' < "$SSL_ERR")"
+              exit 1
+            fi
             if [ "$DERIVED_PUB" != "$SPARKLE_PUB" ]; then
               echo "::error::SPARKLE_ED_PRIVATE_KEY does not match SUPublicEDKey in Info.plist — updates signed with it would be rejected by every installed copy. Rotating the Sparkle key means updating BOTH, in the same commit."
               exit 1
