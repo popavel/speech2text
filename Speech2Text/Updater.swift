@@ -156,8 +156,10 @@ private final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
 }
 
 /// The Sparkle-backed `UpdaterModel`, owning the app's one `SPUStandardUpdaterController`
-/// (standard Sparkle UI, no delegates). `@MainActor` like the rest of the app's state; Sparkle
-/// drives its own UI on the main thread.
+/// (standard Sparkle UI, so no user-driver delegate — but an `UpdaterDelegate` IS wired up, to
+/// postpone the install-and-relaunch over work in progress, and this model is what keeps it alive:
+/// the controller's `updaterDelegate` outlet is `__weak`). `@MainActor` like the rest of the app's
+/// state; Sparkle drives its own UI on the main thread.
 @MainActor
 @Observable
 final class SparkleUpdaterModel: UpdaterModel {
