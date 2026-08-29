@@ -185,8 +185,11 @@ Things that keep this sane — don't undo them:
   under `@Observable`, init-time assignment runs the setter, which would write
   `SUEnableAutomaticChecks` into the shared domain during the test host's app init. A KVO
   observation mirrors Sparkle-side writes back so the Settings toggle can't go stale — scoped to
-  writes *through the property* (Sparkle's own permission UI), not to arbitrary `defaults write`
-  changes of the underlying key, which emit no KVO and are knowingly unhandled.
+  writes *through the property* (Sparkle's own permission UI). An external `defaults write` of the
+  underlying `SUEnableAutomaticChecks` key converges on that same property KVO through Sparkle
+  itself (since 2.8.0: `SUHost` observes the defaults domain → `SPUUpdaterSettings` posts an
+  explicit change → `keyPathsForValuesAffecting…` propagates it), so never add a second observer on
+  the shared defaults domain to "close" it. That leg is upstream implementation, untested here.
 - **Both KVO mirrors seed by direct read and re-read on change — never `MainActor.assumeIsolated`.**
   Of the `SPUUpdater` properties this model touches, `canCheckForUpdates` is the one Sparkle's
   header does *not* document as main-thread-only (`automaticallyChecksForUpdates`,

@@ -331,12 +331,22 @@ final class SparkleUpdaterModel: UpdaterModel {
         // Sparkle's own update-permission UI, for instance.
         //
         // SCOPE, precisely: this is KVO on `SPUUpdater.automaticallyChecksForUpdates`, so it fires
-        // for writes THROUGH that property, not for arbitrary changes to the underlying
-        // `SUEnableAutomaticChecks` defaults key. An external `defaults write` while the app is
-        // running does change Sparkle's behaviour (its getter reads live through `SUHost`) but
-        // emits no KVO notification, so the toggle would still read stale until the next launch.
-        // That edge case is knowingly unhandled — closing it would mean observing the defaults
-        // domain directly.
+        // for writes THROUGH that property — Sparkle's own permission UI, our setter's
+        // write-through. An external `defaults write` of the underlying `SUEnableAutomaticChecks`
+        // key while the app runs lands here TOO, but by way of Sparkle rather than of anything in
+        // this file: since 2.8.0 (`Synchronize updater settings with user defaults`, #2728)
+        // `SUHost.observeChangesFromUserDefaultKeys:` KVO-observes the defaults domain,
+        // `SPUUpdaterSettings.processCurrentAutomaticallyChecksForUpdates` re-reads and posts an
+        // explicit `will`/`didChangeValueForKey:`, and
+        // `+keyPathsForValuesAffectingAutomaticallyChecksForUpdates` propagates that to the
+        // updater property observed here. So do NOT add a second observation on
+        // `UserDefaults.standard` to "close the gap" — there is none, and reaching for the shared
+        // domain here is the exact coupling the three initializers above exist to prevent.
+        //
+        // That last leg is upstream behaviour we neither own nor test (exercising it needs a real
+        // `SPUUpdater`, which no test here may construct), and it is Sparkle implementation rather
+        // than a promise in its header — verified against the pinned 2.9.4 sources. Treat it as a
+        // nicety Sparkle currently provides, not an invariant of this file.
         //
         // Same main-actor hop and live re-read as the mirror above, for the same two reasons: KVO
         // is delivered on the mutating thread and nothing here guarantees that is the main one,

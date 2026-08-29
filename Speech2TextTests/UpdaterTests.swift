@@ -143,8 +143,10 @@ struct SparkleUpdaterLiveWiringTests {
         #expect(!model.automaticallyChecksForUpdates)
 
         // Simulates a Sparkle-side write through the property — e.g. its own update-permission
-        // UI. (NOT an external `defaults write`: that emits no KVO and is knowingly unhandled —
-        // see the observation's comment in Updater.swift.)
+        // UI. (An external `defaults write` of `SUEnableAutomaticChecks` converges on this same
+        // property KVO via Sparkle's own defaults observation; that leg is upstream's and can't be
+        // exercised here without a real `SPUUpdater` — see the observation's comment in
+        // Updater.swift.)
         fake.automaticallyChecksForUpdates = true
 
         #expect(await waitUntil { model.automaticallyChecksForUpdates })
