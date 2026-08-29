@@ -258,7 +258,7 @@ struct SparkleUpdaterGateTests {
     func refusesToStartUnderUITesting() {
         #expect(
             !SparkleUpdaterModel.shouldStartUpdater(
-                arguments: ["Speech2Text", "-uiTesting"],
+                arguments: ["Speech2Text", TranscriptionManager.uiTestingLaunchArgument],
                 environment: [:],
                 isDebugBuild: false
             )

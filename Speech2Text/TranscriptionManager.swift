@@ -873,6 +873,26 @@ class TranscriptionManager {
     }
 }
 
+extension TranscriptionManager {
+    /// The launch argument XCUITest passes to mark a UI-test run.
+    ///
+    /// Deliberately **outside** the `#if DEBUG` below. Both seam functions there are compiled out of
+    /// Release, but `SparkleUpdaterModel.shouldStartUpdater` reads this same sentinel
+    /// unconditionally — that check is reachable *only* in Release (a Debug build is refused a line
+    /// earlier), so a Debug-only constant would not compile for its one real caller.
+    ///
+    /// One half of a two-target contract: `Speech2TextUITests` is a separate process that links no
+    /// app symbols, so `launchApp()` hardcodes the same string with nothing in the compiler tying
+    /// the two together. Renaming the *identifier* is safe — that is an ordinary compiler-checked
+    /// refactor. Changing the *value* is what silently breaks the seam and the updater gate on a
+    /// UI-test launch, and it obliges an edit to that file too.
+    /// `uiTestingLaunchArgumentIsTheCrossTargetContract` catches that from this side only: it pins
+    /// this constant to the literal XCUITest sends, so an app-side value change fails the unit
+    /// suite. The reverse — editing the literal over there — is caught by nothing but running the
+    /// UI tests.
+    nonisolated static let uiTestingLaunchArgument = "-uiTesting"
+}
+
 #if DEBUG
 extension TranscriptionManager {
     /// The `UserDefaults` a UI-test launch should persist settings into: a cleared, volatile suite
@@ -883,7 +903,7 @@ extension TranscriptionManager {
     static func uiTestSettingsStore(
         arguments: [String] = ProcessInfo.processInfo.arguments
     ) -> UserDefaults {
-        guard arguments.contains("-uiTesting") else { return .standard }
+        guard arguments.contains(Self.uiTestingLaunchArgument) else { return .standard }
         let suiteName = "com.speech2text.uitests"
         guard let suite = UserDefaults(suiteName: suiteName) else { return .standard }
         suite.removePersistentDomain(forName: suiteName)
@@ -898,10 +918,10 @@ extension TranscriptionManager {
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
-        // Sentinel produced by Speech2TextUITests.launchApp() (`launchArguments =
-        // ["-uiTesting"]`). The two strings must stay in sync — there is no
-        // compile-time link across the target boundary.
-        guard arguments.contains("-uiTesting") else { return }
+        // Sentinel produced by Speech2TextUITests.launchApp(), which spells the same string out
+        // as a literal because that target links no app symbols — see the constant's note on the
+        // cross-target half of that contract.
+        guard arguments.contains(Self.uiTestingLaunchArgument) else { return }
 
         // Preload files without a file dialog. `addFiles` filters by extension
         // only (it never stats the file), so synthetic paths render chips and

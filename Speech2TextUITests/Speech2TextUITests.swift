@@ -54,8 +54,15 @@ final class Speech2TextUITests: XCTestCase {
         stubResult: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
-        // Sentinel consumed by TranscriptionManager.applyUITestSeamIfPresent(); the
-        // string must match the guard there (Speech2Text/TranscriptionManager.swift).
+        // Sentinel consumed by TranscriptionManager.applyUITestSeamIfPresent() and by
+        // SparkleUpdaterModel.shouldStartUpdater(). This target links no app symbols, so the
+        // string is spelled out rather than shared: its value must equal
+        // TranscriptionManager.uiTestingLaunchArgument. That contract is guarded in ONE
+        // direction only — the unit tripwire `uiTestingLaunchArgumentIsTheCrossTargetContract`
+        // pins the app-side constant to this value, but nothing observes this file. Change the
+        // literal here and the whole unit suite stays green while the seam quietly stops
+        // applying; only a UI-test run catches it, and it clobbers real app preferences on the
+        // way (with the seam inert, the app persists to `.standard`, not the volatile suite).
         // (Window-restoration hygiene for the help book's second window is handled by
         // terminating the app in tearDown — see there.)
         app.launchArguments = ["-uiTesting"]
