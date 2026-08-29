@@ -112,8 +112,14 @@ extension SPUUpdater: SparkleUpdating {
 /// starting work in the seconds before they click.
 ///
 /// Retained by `SparkleUpdaterModel` — `SPUStandardUpdaterController` holds its delegate weakly.
+///
+/// Internal (not private, unlike the app-menu command views in `Speech2TextApp.swift`) so the
+/// selector test can construct one and ask whether the postpone hook is still wired — see the
+/// `@objc` pin below. Constructing it is hermetically safe: `init(isBusy:)` takes only a closure and
+/// names no Sparkle type, so a test cannot bring an `SPUUpdater`/`SUHost` over the shared defaults
+/// domain into existence through this door either.
 @MainActor
-private final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
+final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     private let isBusy: @MainActor () -> Bool
 
     init(isBusy: @escaping @MainActor () -> Bool) {
@@ -156,7 +162,14 @@ private final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     /// (or warning before it is discarded), which is a separate change — see the "Distribution &
     /// updates" note in AGENTS.md.
     /// The label really is `untilInvokingBlock:` — `untilInvoking:` compiles fine but only
-    /// "nearly matches" the optional requirement, so it would never be called.
+    /// "nearly matches" the optional requirement, so it would never be called. That is a WARNING
+    /// only, and nothing here promotes warnings to errors, so the typo used to yield a green build
+    /// and a green suite with this hook silently dead. The explicit `@objc` selector below is what
+    /// keeps it wired now: the ObjC runtime dispatches on the selector, so renaming the Swift label
+    /// can no longer detach the method (verified — with the label wrong and this pin in place,
+    /// Sparkle still finds it). The pin is of course as typo-able as the label was, so
+    /// `postponeHookSelectorIsWired` in UpdaterTests asserts the selector itself.
+    @objc(updater:shouldPostponeRelaunchForUpdate:untilInvokingBlock:)
     func updater(
         _ updater: SPUUpdater,
         shouldPostponeRelaunchForUpdate item: SUAppcastItem,
