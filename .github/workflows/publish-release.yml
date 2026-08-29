@@ -79,9 +79,9 @@ jobs:
       - name: Preflight — secrets present, tag matches project.yml, Sparkle keys paired
         env:
           # The secrets the presence check below asserts, exposed here purely so it can see them
-          # (DEVID_CERT_PASSWORD is not among them — see the check). APPLE_TEAM_ID, ASC_KEY_ID
-          # and ASC_ISSUER_ID have no other `env:` entry; their consuming steps interpolate them
-          # directly.
+          # (DEVID_CERT_PASSWORD is not among them — see the check). Every secret this workflow
+          # touches reaches its step through an `env:` block like this one, never through a
+          # `secrets.*` expression inlined into `run:` text — see the build step for why.
           DEVID_CERT_P12_BASE64: ${{ secrets.DEVID_CERT_P12_BASE64 }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -117,6 +117,34 @@ jobs:
           done
           [ -z "$MISSING" ] || {
             echo "::error::missing or empty repository secret(s):$MISSING — set them under Settings → Secrets and variables → Actions, then re-push the tag."
+            exit 1
+          }
+
+          # …and the three single-token identifiers must carry no stray whitespace. A value
+          # pasted out of App Store Connect or the Developer portal with a trailing newline is
+          # still "present", so the loop above waves it through — and it is not a parse error at
+          # the consuming site either, because every one of them double-quotes it: the newline
+          # rides along INSIDE the argument. DEVELOPMENT_TEAM="TEAM\n" then fails codesign ~20m
+          # in, and a notarytool --key-id/--issuer carrying one fails auth ~25m in with a
+          # credentials error that names nothing. Note `env:` does NOT help here — an environment
+          # variable preserves a trailing newline exactly. Only this check catches it, in seconds.
+          #
+          # Scoped to these three on purpose: the other three secrets are legitimately
+          # multi-line — DEVID_CERT_P12_BASE64 and SPARKLE_ED_PRIVATE_KEY are base64 (wrapped
+          # output is normal, and `base64 -d` tolerates it) and ASC_API_KEY_P8 is a PEM — so
+          # whitespace-checking them would reject valid credentials and block every release.
+          # Format-agnostic on purpose too: asserting a shape (10 alphanumerics, a UUID) would
+          # hardcode Apple's current formats and turn a format widening into a failed release,
+          # whereas "contains no whitespace" can never reject a credential that would otherwise
+          # work. Shell-metacharacter injection is closed by the `env:` blocks, not here.
+          MALFORMED=""
+          for name in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID; do
+            value="${!name-}"
+            [ "$value" = "$(printf '%s' "$value" | tr -d '[:space:]')" ] \
+              || MALFORMED="$MALFORMED $name"
+          done
+          [ -z "$MALFORMED" ] || {
+            echo "::error::repository secret(s) contain whitespace:$MALFORMED — re-paste each value with no leading/trailing newline or space, then re-push the tag. Names only; the values stay masked."
             exit 1
           }
 
@@ -277,6 +305,12 @@ jobs:
       # full symbols and the signature covers the stripped binary.
       # ---------------------------------------------------------------------------------------
       - name: Build (Release, Developer ID, hardened runtime)
+        env:
+          # Passed as an environment variable, NOT interpolated into the xcodebuild line below.
+          # A `${{ ... }}` expression is substituted into the script TEXT before bash parses it,
+          # so a value containing a quote or a shell metacharacter would be executed as script
+          # rather than passed as data. Through `env:` the value is never part of the program.
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -o pipefail
           xcodebuild \
@@ -287,7 +321,7 @@ jobs:
             -derivedDataPath DerivedData \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
-            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             ENABLE_HARDENED_RUNTIME=YES \
             OTHER_CODE_SIGN_FLAGS="--timestamp" \
             DEBUG_INFORMATION_FORMAT=dwarf-with-dsym \
@@ -359,6 +393,9 @@ jobs:
       - name: Notarize and staple the app
         env:
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          # Via `env:` for the same reason as the build step above.
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           set -euo pipefail
           APP="DerivedData/Build/Products/Release/Speech2Text.app"
@@ -368,8 +405,8 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --key "$ASC_KEY_PATH" \
-            --key-id "${{ secrets.ASC_KEY_ID }}" \
-            --issuer "${{ secrets.ASC_ISSUER_ID }}" \
+            --key-id "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER_ID" \
             --wait
           rm "$RUNNER_TEMP/notarize.zip"
           xcrun stapler staple "$APP"
@@ -397,6 +434,10 @@ jobs:
       # lives OUTSIDE artifacts/ so generate_appcast never sees it as a second update entry.
       # ---------------------------------------------------------------------------------------
       - name: Build, sign, notarize and staple the DMG
+        env:
+          # Via `env:` for the same reason as the build step above.
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           set -euo pipefail
           mkdir -p dist dmgroot
@@ -419,8 +460,8 @@ jobs:
           codesign --force --sign "Developer ID Application" --timestamp "$DMG"
           xcrun notarytool submit "$DMG" \
             --key "$ASC_KEY_PATH" \
-            --key-id "${{ secrets.ASC_KEY_ID }}" \
-            --issuer "${{ secrets.ASC_ISSUER_ID }}" \
+            --key-id "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER_ID" \
             --wait
           xcrun stapler staple "$DMG"
           xcrun stapler validate "$DMG"
