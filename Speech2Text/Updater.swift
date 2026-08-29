@@ -410,6 +410,17 @@ final class SparkleUpdaterModel: UpdaterModel {
     /// They are unreachable while tests only ever run in Debug, and are kept so that running a
     /// suite against a Release build doesn't silently start an updater.
     ///
+    /// **That is the whole of what they buy, and it is worth being precise about the limit.** They
+    /// do not make a Release-built test run isolated: `Speech2TextApp.init` reaches
+    /// `uiTestSettingsStore()` only inside `#if DEBUG`, so the same launch this gate declines to
+    /// start an updater for is persisting its settings to `.standard` — the developer's real
+    /// preferences. The scopes differ deliberately rather than by oversight. The seam *injects
+    /// state* from argv and the environment (a preloaded file queue, a stubbed transcript), which
+    /// must not exist in a shipped binary where any process could drive it; this gate only
+    /// *declines to act*, so it is safe to keep unconditional and cheap to leave in. Aligning the
+    /// two would mean either shipping the injection seam or deleting the one check here that does
+    /// anything at all in Release.
+    ///
     /// All three inputs are injectable so the gating tests can exercise every branch.
     static func shouldStartUpdater(
         arguments: [String] = ProcessInfo.processInfo.arguments,
@@ -417,9 +428,7 @@ final class SparkleUpdaterModel: UpdaterModel {
         isDebugBuild: Bool = SparkleUpdaterModel.isDebugBuild
     ) -> Bool {
         if isDebugBuild { return false }
-        // Same literal as `TranscriptionManager.applyUITestSeamIfPresent`; there is no shared
-        // constant for it in this target yet.
-        if arguments.contains("-uiTesting") { return false }
+        if arguments.contains(TranscriptionManager.uiTestingLaunchArgument) { return false }
         if Self.testEnvironmentMarkers.contains(where: { environment[$0] != nil }) { return false }
         return true
     }

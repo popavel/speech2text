@@ -873,12 +873,29 @@ struct TranscriptionManagerTests {
 
     // MARK: UI-test launch seam
 
+    // Outside the `#if DEBUG` below because the constant itself is: the seam is Debug-only, but
+    // `SparkleUpdaterModel.shouldStartUpdater` reads the same sentinel in Release.
+    @Test("The UI-test sentinel matches the literal XCUITest actually sends")
+    func uiTestingLaunchArgumentIsTheCrossTargetContract() {
+        // Deliberately a literal-vs-literal assertion. Speech2TextUITests is a separate process
+        // that links no app symbols, so it hardcodes this string in `launchApp()` — nothing in the
+        // compiler ties the two halves together. Renaming the identifier is a compiler-checked
+        // refactor and needs no edit there; changing the VALUE does, and this is the only cheap
+        // thing that says so out loud. Without it, an app-side value change leaves the seam and
+        // the updater gate silently inert on a UI-test launch.
+        //
+        // Guards the app side ONLY. It cannot see Speech2TextUITests.swift, so a literal changed
+        // over there still leaves this suite green — that direction is caught only by running the
+        // UI tests, which is why the comment at that call site spells the hazard out.
+        #expect(TranscriptionManager.uiTestingLaunchArgument == "-uiTesting")
+    }
+
     #if DEBUG
     @Test("Launch seam ignores an empty stub result instead of marking completion")
     func emptyStubResultDoesNotCompleteRun() {
         let manager = TranscriptionManager()
         manager.applyUITestSeamIfPresent(
-            arguments: ["-uiTesting"],
+            arguments: [TranscriptionManager.uiTestingLaunchArgument],
             environment: ["UITEST_STUB_RESULT": ""]
         )
         #expect(manager.status == .idle)
@@ -889,7 +906,7 @@ struct TranscriptionManagerTests {
     func nonEmptyStubResultCompletesRun() {
         let manager = TranscriptionManager()
         manager.applyUITestSeamIfPresent(
-            arguments: ["-uiTesting"],
+            arguments: [TranscriptionManager.uiTestingLaunchArgument],
             environment: ["UITEST_STUB_RESULT": "hello world"]
         )
         #expect(manager.status == .completed)
@@ -900,7 +917,7 @@ struct TranscriptionManagerTests {
     func preloadFilesSeatsThemInTheQueue() {
         let manager = TranscriptionManager()
         manager.applyUITestSeamIfPresent(
-            arguments: ["-uiTesting"],
+            arguments: [TranscriptionManager.uiTestingLaunchArgument],
             environment: ["UITEST_PRELOAD_FILES": "/tmp/a.mp3\n/tmp/b.wav"]
         )
         #expect(manager.droppedFileURLs.count == 2)
@@ -911,7 +928,7 @@ struct TranscriptionManagerTests {
     func stubResultClearsSkippedFileNames() {
         let manager = TranscriptionManager()
         manager.applyUITestSeamIfPresent(
-            arguments: ["-uiTesting"],
+            arguments: [TranscriptionManager.uiTestingLaunchArgument],
             environment: [
                 "UITEST_PRELOAD_FILES": "/tmp/a.mp3\n/tmp/notes.pdf",
                 "UITEST_STUB_RESULT": "hello world",

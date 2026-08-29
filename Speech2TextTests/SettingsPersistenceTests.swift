@@ -141,7 +141,9 @@ struct SettingsPersistenceTests {
         // `-uiTesting` → a separate, cleared store, so a manager on it always starts from the code
         // defaults (regardless of what the real app previously saved) and nothing bleeds into
         // `.standard`. This is what keeps `testLanguagePickerSearchAndSelect` deterministic.
-        let store = TranscriptionManager.uiTestSettingsStore(arguments: ["-uiTesting"])
+        let store = TranscriptionManager.uiTestSettingsStore(
+            arguments: [TranscriptionManager.uiTestingLaunchArgument]
+        )
         #expect(store !== UserDefaults.standard)
 
         let manager = TranscriptionManager(defaults: store)
