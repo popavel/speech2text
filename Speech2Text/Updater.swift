@@ -122,9 +122,31 @@ private final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     }
 
     /// Returning `true` defers the install and relaunch until `installHandler` is invoked. We
-    /// invoke it as soon as the app goes idle; if it never does, the update simply installs on the
-    /// next launch, which is Sparkle's normal fallback. Polling (rather than observing) keeps this
-    /// to one self-contained task with no lifetime coupling to the manager.
+    /// invoke it as soon as the app goes idle. Polling (rather than observing) keeps this to one
+    /// self-contained task with no lifetime coupling to the manager.
+    ///
+    /// **If the app never goes idle, nothing installs.** Sparkle's header is explicit that the
+    /// handler "must be completed", and there is no termination fallback on the framework side:
+    /// quitting installs nothing, because the installer was never told to proceed. Worse, the
+    /// update session stays open for the life of the process — `SPUUpdater` keeps `_driver`
+    /// non-nil, which holds `canCheckForUpdates` false, so "Check for Updates…" is dead too and
+    /// the user can't even retry by hand. Recovery is the next launch, which re-probes for an
+    /// in-progress installer or re-checks the feed. So this loop's liveness is not optional: it
+    /// rests on `isBusy()` eventually clearing, which is why model loading is bounded on both
+    /// sides (`TranscriptionManager.modelDownloadIdleTimeout` and `modelLoadCeiling`) rather than
+    /// left to run forever. Model loading is the *reachable* wedge, not the only one — a
+    /// transcription whose input sits on a network volume that vanishes mid-export can hang too,
+    /// and that path is knowingly unbounded (see AGENTS.md, "Distribution & updates").
+    ///
+    /// Two things this deliberately does NOT worry about, both checked against Sparkle's source
+    /// so they don't get re-litigated. A second concurrent postpone task is impossible:
+    /// `SPUInstallerDriver` sets `_postponedOnce` before calling this and never asks again, and
+    /// `SPUUpdater` refuses to start a second session while a driver is alive. And a late
+    /// `installHandler()` cannot cause a surprise relaunch: the block Sparkle passes captures the
+    /// driver weakly, so once the session is gone, invoking it does nothing.
+    ///
+    /// (The `catch` on the sleep below is therefore belt-and-braces rather than a live path —
+    /// nothing retains this task's handle, so nothing can cancel it.)
     ///
     /// NOT a complete guarantee, and don't document it as one. `SPUUpdaterDelegate.h` says this
     /// hook "is not called if the user didn't relaunch on the previous update, in that case it
@@ -145,8 +167,8 @@ private final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         Task { @MainActor [isBusy] in
             while isBusy() {
                 // NOT `try?`: that swallows cancellation, and a cancelled task would then spin
-                // this loop on the main actor and freeze the UI. Bail instead — the update
-                // installs on the next launch, Sparkle's normal fallback.
+                // this loop on the main actor and freeze the UI. Bail instead — the update is
+                // then left for the next launch to pick up (see above).
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }
             }
             installHandler()
