@@ -132,6 +132,17 @@ enum TranscriptionError: LocalizedError, Equatable {
     case noAudioTrack
     case audioExtractionFailed
     case unsupportedFormat(String)
+    /// The model download reported no progress for this long — see `withStallWatchdog`. Carries the
+    /// window so the message names it without the number drifting from `modelDownloadIdleTimeout`.
+    case modelDownloadStalled(Duration)
+    /// The model download failed outright. Wraps the underlying error's text, which is otherwise
+    /// unreadable: Hub's errors are plain Swift enums, so their `localizedDescription` is the
+    /// useless "The operation couldn't be completed."
+    case modelDownloadFailed(String)
+    /// Loading the downloaded model hit its ceiling — see `modelLoadCeiling`. Distinct from
+    /// `modelDownloadStalled` because the user's next move differs: nothing is left to resume, and
+    /// the likeliest cause is the tokenizer fetch inside `loadModels()` hanging.
+    case modelLoadTimedOut(Duration)
 
     var errorDescription: String? {
         switch self {
@@ -141,6 +152,22 @@ enum TranscriptionError: LocalizedError, Equatable {
             return ext.isEmpty
                 ? "Unsupported file format: file has no extension"
                 : "Unsupported file format: .\(ext)"
+        case .modelDownloadStalled(let idle):
+            let minutes = max(1, idle.components.seconds / 60)
+            return """
+                Model download stalled: no progress for \(minutes) minute\(minutes == 1 ? "" : "s"). \
+                Check your connection and try again — if it keeps failing, delete the downloaded \
+                models in Settings and start over
+                """
+        case .modelDownloadFailed(let reason):
+            return "Model download failed: \(reason)"
+        case .modelLoadTimedOut(let ceiling):
+            let minutes = max(1, ceiling.components.seconds / 60)
+            return """
+                Loading the model took longer than \(minutes) minute\(minutes == 1 ? "" : "s") and \
+                was given up on. Check your connection — the first load of a model also fetches its \
+                tokenizer — and try again
+                """
         }
     }
 }
@@ -261,7 +288,8 @@ class TranscriptionManager {
 
     /// The model id currently loaded into `whisperKit`, or `nil` when no engine is loaded.
     /// Internal set so tests can simulate a loaded engine; production writes it only in
-    /// `startTranscription` (on load) and `wipeDirectory` (reset after a removal empties the cache).
+    /// `loadModel(named:)` (cleared before the new engine loads, set once it has) and
+    /// `wipeDirectory` (reset after a removal empties the cache).
     var loadedModel: String?
 
     /// The loaded WhisperKit instance, exposed only as an opaque object so tests
@@ -401,10 +429,7 @@ class TranscriptionManager {
         do {
             let modelName = selectedModel.rawValue
             if whisperKit == nil || loadedModel != modelName {
-                // downloadBase keeps models in our app-owned Application Support folder
-                // (see modelCacheDirectory) instead of the Hub default ~/Documents/huggingface.
-                whisperKit = try await WhisperKit(model: modelName, downloadBase: Self.modelCacheDirectory)
-                loadedModel = modelName
+                try await loadModel(named: modelName)
             }
 
             guard let kit = whisperKit else {
@@ -450,6 +475,103 @@ class TranscriptionManager {
         } catch {
             status = .error(error.localizedDescription)
         }
+    }
+
+    /// Download and load `modelName`, replacing any engine already loaded.
+    ///
+    /// This is `WhisperKit(model:downloadBase:)` taken apart into its two phases so the download
+    /// half can be watched. It is a faithful split, not a reinterpretation: with a non-nil `model`,
+    /// WhisperKit's own `setupModels` passes the name straight to `WhisperKit.download(variant:)`
+    /// with these same repo/endpoint defaults, and constructing with `download: false` and no
+    /// `modelFolder` is a no-op rather than an error. `downloadBase` keeps models in our app-owned
+    /// Application Support folder (see `modelCacheDirectory`) instead of the Hub default
+    /// `~/Documents/huggingface`.
+    ///
+    /// **Both phases are bounded, but not in the same way.** The download reports progress, so it
+    /// gets a true stall watchdog: slow is fine, silent is not. `loadModels()` cannot be watched
+    /// that way — it reports nothing a watchdog could read, and Core ML specialization is
+    /// legitimately slow the first time a model meets a chip — so it gets a plain ceiling instead,
+    /// deliberately far beyond any real load.
+    ///
+    /// It needs one: `loadModels()` is NOT purely local. It ends in `loadTokenizerIfNeeded()`,
+    /// which falls back to fetching the tokenizer from the Hub whenever no local `tokenizer.json`
+    /// is found — the normal first-run case. That download can wedge exactly like the model
+    /// download can, and it would pin `.loadingModel` forever. A half-hour ceiling is a poor error
+    /// message but a correct backstop: the busy flag clears, so the UI and Sparkle's
+    /// relaunch-postpone loop both come back.
+    ///
+    /// Splitting the phases also moves loading INTO `.loadingModel`, where the status line already
+    /// claims it happens. WhisperKit defers loading to the first `transcribe(...)` call otherwise —
+    /// same work, but reported as transcription progress. `transcribe` won't reload what is already
+    /// loaded, so nothing happens twice.
+    ///
+    /// Assignment is deliberately last: a partial download leaves a snapshot that `loadModels()`
+    /// rejects, and caching a half-built engine would make every later run fail the same way from
+    /// the "already loaded" fast path.
+    private func loadModel(named modelName: String) async throws {
+        let ticker = ProgressTicker()
+        let downloadBase = Self.modelCacheDirectory
+
+        let modelFolder: URL
+        do {
+            modelFolder = try await Self.withStallWatchdog(
+                idle: Self.modelDownloadIdleTimeout,
+                poll: Self.modelDownloadPollInterval,
+                ticker: ticker,
+                drain: Self.modelDownloadDrain
+            ) {
+                do {
+                    return try await WhisperKit.download(
+                        variant: modelName,
+                        downloadBase: downloadBase
+                    ) { _ in ticker.tick() }
+                } catch {
+                    throw TranscriptionError.modelDownloadFailed(String(describing: error))
+                }
+            }
+        } catch let timeout as StallTimeout {
+            throw TranscriptionError.modelDownloadStalled(timeout.idle)
+        }
+
+        let kit = try await WhisperKit(
+            WhisperKitConfig(
+                model: modelName,
+                downloadBase: downloadBase,
+                load: false,
+                download: false
+            )
+        )
+        kit.modelFolder = modelFolder
+
+        // Release the engine we're replacing BEFORE the new one allocates its weights. Holding
+        // both across the load would roughly double peak memory on a model switch — the old code
+        // never did, because it left loading to the first `transcribe(...)`, by which point the
+        // old engine was already gone. On failure this leaves no engine loaded, which costs a
+        // reload from the on-disk cache and keeps `loadedModel` honest about what's in memory.
+        //
+        // This covers the ordinary switch, not the ceiling timeout below: an abandoned
+        // `loadModels()` keeps `kit` alive until it finishes on its own, so a retry after that
+        // rare failure really can hold two sets of weights. Core ML loading isn't cancellable in
+        // any way we could rely on, so there is nothing better to do than let it finish.
+        whisperKit = nil
+        loadedModel = nil
+
+        do {
+            // Nothing ticks this one: Core ML reports no progress, so the watchdog degenerates
+            // into the plain ceiling this phase wants. See the doc comment above.
+            try await Self.withStallWatchdog(
+                idle: Self.modelLoadCeiling,
+                poll: Self.modelDownloadPollInterval,
+                ticker: ProgressTicker()
+            ) {
+                try await kit.loadModels()
+            }
+        } catch let timeout as StallTimeout {
+            throw TranscriptionError.modelLoadTimedOut(timeout.idle)
+        }
+
+        whisperKit = kit
+        loadedModel = modelName
     }
 
     /// Build the `DecodingOptions` for a run from the current user selections. Extracted from
@@ -569,6 +691,56 @@ class TranscriptionManager {
     nonisolated static var modelCacheDirectory: URL {
         appSupportDirectory.appendingPathComponent("models", isDirectory: true)
     }
+
+    /// How long the model download may report no progress before it is treated as wedged (see
+    /// `withStallWatchdog`). Bounds `isProcessing`, which is what a stalled download would
+    /// otherwise pin true for the life of the process.
+    ///
+    /// Half an hour, and **do not tighten it** — the window is not a guess, it is arithmetic.
+    ///
+    /// WhisperKit's Hub downloader reports progress only when it flushes a **10 MB** chunk, so this
+    /// window sets a hard throughput floor of 10 MB per window: ~5.7 KB/s (≈46 kbps) at half an
+    /// hour, but ~17.5 KB/s (≈140 kbps) at ten minutes. A link under the floor is declared stalled
+    /// no matter how healthy it is — and, because Hub's resume state also only advances per flushed
+    /// chunk, every retry restarts from the same boundary, so the model becomes permanently
+    /// undownloadable rather than merely slow. That is the exact inversion of this watchdog's
+    /// purpose ("slow is fine, silent is not"), so the floor has to sit below any link someone
+    /// might plausibly be waiting on: even the 75 MB `tiny` model is a multi-hour download at
+    /// 46 kbps.
+    ///
+    /// Silence isn't only about bandwidth either. The repo file listing and the per-file metadata
+    /// requests that precede each download emit nothing, and neither does the hash verification of
+    /// an already-cached snapshot — sweeps whose duration scales with file count and latency.
+    ///
+    /// The cost of being generous is only how long a genuinely wedged download takes to report.
+    /// Fast failure was never the goal here; a bounded busy flag is.
+    nonisolated static let modelDownloadIdleTimeout: Duration = .seconds(1800)
+
+    /// How often the watchdog checks for silence. Granularity, not precision — there is no reason
+    /// to notice a half-hour stall within less than a few seconds.
+    nonisolated static let modelDownloadPollInterval: Duration = .seconds(5)
+
+    /// How long a stalled download is given to actually stop before the failure is reported.
+    ///
+    /// Generous on purpose. Both recoveries the error message invites — retry, or delete the
+    /// downloaded models — write to the same snapshot directory an orphaned downloader may still
+    /// be writing to, and this is the window that makes that overlap unlikely rather than likely:
+    /// the user cannot read the message, open Settings and click Delete inside it. Thirty seconds
+    /// is invisible next to the half-hour stall that preceded it.
+    ///
+    /// It is a shrunk window, not a lock. The alternative — refusing deletes while an orphan is
+    /// unaccounted for — would gate the recovery path on a task that by definition might never
+    /// finish, which is the same class of wedge this whole file exists to remove.
+    nonisolated static let modelDownloadDrain: Duration = .seconds(30)
+
+    /// Hard ceiling on `WhisperKit.loadModels()`. Not a stall window — that phase reports nothing
+    /// to watch — so it has to clear the slowest legitimate case by a wide margin: a first-ever
+    /// Core ML specialization of the largest model on the oldest supported chip, minutes rather
+    /// than tens of minutes. Half an hour is far past that, which is the point: it never fires on
+    /// slow hardware, and it still guarantees `.loadingModel` ends. It exists because that phase
+    /// also fetches the tokenizer from the Hub on first run (see `loadModel(named:)`), so it can
+    /// wedge on the network like the download can.
+    nonisolated static let modelLoadCeiling: Duration = .seconds(1800)
 
     /// Total bytes on disk under `directory` (recursive sum of regular-file allocated
     /// sizes). Returns 0 when the directory doesn't exist or can't be enumerated.

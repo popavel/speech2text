@@ -125,18 +125,28 @@ pieces run on GitHub's runners.
 
 ## Architecture
 
-Three Swift files do all the real work; the UI is intentionally thin.
+A handful of Swift files do all the real work; the UI is intentionally thin.
 
 - [Speech2Text/TranscriptionManager.swift](Speech2Text/TranscriptionManager.swift) — the brain. `@MainActor @Observable` class holding all app state. Owns the `WhisperKit` instance, lazily (re)loads it when `selectedModel` changes, and drives a `TranscriptionStatus` state machine (`idle → loadingModel → transcribing(progress) → completed | error`). For video files it routes through `extractAudio(...)` which uses `AVAssetExportSession` to write a temp `.m4a` before handing the path to WhisperKit. Supported extensions are declared as `nonisolated static` sets on this type — the UI reads from these, so changes propagate everywhere.
 - [Speech2Text/ContentView.swift](Speech2Text/ContentView.swift) — SwiftUI view that reads/writes `TranscriptionManager` state. No business logic; drag-and-drop, file picker, language/model pickers, and the result `TextEditor` all bind directly to the manager.
 - [Speech2Text/Speech2TextApp.swift](Speech2Text/Speech2TextApp.swift) — app entry point.
 - [Speech2Text/Updater.swift](Speech2Text/Updater.swift) — the Sparkle auto-update seam (see "Distribution & updates" below). Views depend on the `UpdaterModel` protocol, never on Sparkle.
+- [Speech2Text/ModelDownloadWatchdog.swift](Speech2Text/ModelDownloadWatchdog.swift) — `withStallWatchdog`, which bounds the two phases of model loading so a wedged download can't pin `isProcessing` forever (`loadModel(named:)` is its only caller). Small but concurrency-heavy: it deliberately abandons rather than awaits a stalled operation, so read its doc comment before changing it — a structured `TaskGroup` rewrite reintroduces the exact hang it prevents. Why it must exist at all is in "Distribution & updates" below.
 
 **State flow** is one-way: UI mutates `selectedLanguage`/`selectedModel`/`droppedFileURLs`, calls `startTranscription()`, then renders from `status` + `transcriptionResult`. Don't add parallel state in views.
 
 **WhisperKit models** are downloaded on first use (not bundled); first run with a given model can be slow, and `*.bin`/`*.mlmodelc` are gitignored. The download location is overridden via WhisperKit's `downloadBase:` to the app-owned `~/Library/Application Support/com.speech2text.app/models` (see `TranscriptionManager.modelCacheDirectory`) — *not* WhisperKit's default `~/Documents/huggingface`, which would dump gigabytes into the user's Documents. `TranscriptionManager` exposes `currentCacheSize()`/`deleteAllModels()` (the heavy filesystem walk runs off the `@MainActor`), and the `Settings` scene (`SettingsView` in `ContentView.swift`) lets users delete that cache — the in-app half of a graceful uninstall.
 
 **WhisperKit dependency** in `project.yml` tracks the latest release via `from: "1.0.0"` (SwiftPM up-to-next-major — newest `1.x` release, never a breaking `2.0`). Major bumps are manual; the weekly drift check covers `1.x` drift. Be aware when debugging upstream API drift.
+
+> **A green drift PR does not prove model loading still works.** `loadModel(named:)` reassembles what `WhisperKit(model:downloadBase:)` does internally (download → `modelFolder` → `loadModels()`), and *nothing in the default test run constructs a WhisperKit* — that path lives only in the opt-in `Speech2TextIntegrationTests`, which the drift job doesn't run. A 1.x release that changes those semantics would sail through CI and fail on first model load for every user. So when reviewing a WhisperKit bump (drift PR or manual), run the end-to-end suite yourself; note the gate needs the `TEST_RUNNER_`-prefixed variable as a real environment variable — passing it as an `xcodebuild` build setting silently skips the suite:
+>
+> ```bash
+> TEST_RUNNER_RUN_WHISPERKIT_TESTS=1 xcodebuild -project Speech2Text.xcodeproj \
+>   -scheme Speech2Text -destination 'platform=macOS' \
+>   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+>   test -only-testing:Speech2TextIntegrationTests/TranscriptionPipelineIntegrationTests | xcbeautify
+> ```
 
 ## Distribution & updates
 
@@ -204,6 +214,26 @@ Things that keep this sane — don't undo them:
   mid-transcription still loses the in-memory transcript. The real fix is to stop treating the
   transcript as unrecoverable — persist it, or warn before discarding it — which would also cover
   the plain quit case that already loses it today. Not done here.
+
+  **The postpone loop's liveness rests on the busy flag being bounded.** If `isBusy()` never
+  cleared, `installHandler()` would never fire — and Sparkle installs nothing at termination, so
+  the update would be lost *and* the still-open session would hold `canCheckForUpdates` false for
+  the life of the process (no manual retry either). That is why both halves of model loading are
+  bounded: `TranscriptionManager.modelDownloadIdleTimeout` fails a *download* that reports no
+  progress for half an hour (a stall watchdog, not a deadline — a slow-but-progressing download is
+  never killed, so don't "simplify" it into a wall clock, and **don't tighten the window**: Hub
+  reports progress only per 10 MB chunk, so the window is a throughput floor, and a link below it
+  is not just failed but permanently stuck — read the constant's comment before touching it), and
+  `modelLoadCeiling` puts a half-hour ceiling on `loadModels()`, which reports nothing to watch but
+  is **not** purely local: it fetches the tokenizer from the Hub on first run, so it can wedge on
+  the network too.
+
+  **Only model loading is bounded.** `isProcessing` is also true while transcribing, and that path
+  is unwatched: `extractAudio` awaits `AVAssetExportSession` on the user's file, which is ordinarily
+  local compute but is not immune — an input on a network or removable volume that goes away
+  mid-export can hang, and a hang there strands an update exactly as described above. Bounding it
+  needs a different mechanism (export publishes progress, and the legitimate duration is the length
+  of the user's audio), so it is knowingly left open rather than papered over.
 - **Sparkle owns its preferences** (`SUEnableAutomaticChecks`, `SULastCheckTime`, …) in the app's
   defaults domain, deliberately **outside** `TranscriptionManager.Keys.all` — so "Remove All App
   Data" and "Restore Default Settings" leave them alone.

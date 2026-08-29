@@ -202,6 +202,30 @@ struct TranscriptionErrorTests {
     func descriptionsAreProvided() {
         #expect(TranscriptionError.noAudioTrack.errorDescription?.isEmpty == false)
         #expect(TranscriptionError.audioExtractionFailed.errorDescription?.isEmpty == false)
+        #expect(TranscriptionError.modelDownloadFailed("boom").errorDescription?.contains("boom") == true)
+    }
+
+    /// The window is carried in the payload precisely so the message can't drift from
+    /// `modelDownloadIdleTimeout` — assert it actually reaches the text.
+    @Test("modelDownloadStalled names the silence it waited through")
+    func stalledDescribesTheWindow() {
+        #expect(
+            TranscriptionError.modelDownloadStalled(.seconds(300)).errorDescription?
+                .contains("5 minutes") == true
+        )
+        #expect(
+            TranscriptionError.modelDownloadStalled(.seconds(60)).errorDescription?
+                .contains("1 minute") == true
+        )
+    }
+
+    /// Same drift guard for the load ceiling, and the two must stay distinguishable: a stalled
+    /// download can be resumed, a timed-out load has nothing to resume.
+    @Test("modelLoadTimedOut names its ceiling and reads differently from a stalled download")
+    func loadTimeoutDescribesTheCeiling() {
+        let timedOut = TranscriptionError.modelLoadTimedOut(.seconds(1800))
+        #expect(timedOut.errorDescription?.contains("30 minutes") == true)
+        #expect(timedOut.errorDescription != TranscriptionError.modelDownloadStalled(.seconds(1800)).errorDescription)
     }
 
     @Test("unsupportedFormat names the extension, or says there is none")
