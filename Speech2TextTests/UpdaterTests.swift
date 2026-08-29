@@ -171,6 +171,21 @@ struct SparkleUpdaterLiveWiringTests {
         #expect(SparkleUpdaterModel.mayRelaunchForUpdate(isBusy: false))
     }
 
+    @Test("The postpone hook keeps the exact selector Sparkle calls")
+    func postponeHookSelectorIsWired() {
+        // The one part of the postpone guard that a green build does NOT prove. Sparkle finds this
+        // hook by selector at runtime, and `untilInvoking:` compiles fine while only "nearly
+        // matching" the optional requirement — so the typo yields a green build AND a green suite
+        // with the hook silently never called (no warnings-as-errors here to catch it). The `@objc`
+        // pin in Updater.swift fixes the selector; this asserts the pin is still doing its job.
+        //
+        // Constructing the delegate is hermetically safe: `init(isBusy:)` takes only a closure, so
+        // no `SPUUpdater`/`SUHost` over the shared defaults domain comes into existence.
+        let selector = Selector("updater:shouldPostponeRelaunchForUpdate:untilInvokingBlock:")
+
+        #expect(UpdaterDelegate(isBusy: { false }).responds(to: selector))
+    }
+
     @Test("Forwards a manual check to the updater")
     func forwardsManualCheck() {
         let fake = FakeSparkleUpdater()
@@ -236,6 +251,24 @@ struct SparkleUpdaterGateTests {
             model.automaticallyChecksForUpdates.toggle()
 
             #expect(UserDefaults.standard.object(forKey: key) as? Bool == before)
+        }
+    }
+
+    @Test("The initializer's default startingUpdater: is wired to the launch gate")
+    func defaultInitializerHonoursTheGate() {
+        // Constructed the way `Speech2TextApp.init` does — through the DEFAULT `startingUpdater:`,
+        // which must resolve through `shouldStartUpdater()`. Every other test in this suite either
+        // calls that predicate directly or passes `startingUpdater: false` explicitly, so none of
+        // them notices if the default is ever unwired from the gate; at that point every unit-test
+        // run builds a real SPUUpdater over the developer's own com.speech2text.app defaults,
+        // because the test host IS the app and so `Speech2TextApp.init` runs on every one.
+        //
+        // The snapshot bounds the blast radius rather than removing it: a genuinely started
+        // SPUUpdater also writes `SULastCheckTime` and friends, which this does not restore. That
+        // is acceptable because the damage would already be done by app init, before any test body
+        // ran — this test detects that state, it does not create it.
+        withSharedDomainSnapshot {
+            #expect(!SparkleUpdaterModel(isBusy: { false }).isActive)
         }
     }
 
