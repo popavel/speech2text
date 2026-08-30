@@ -213,13 +213,16 @@ has to be mirrored here by hand. That non-derived surface is:
 - every control label named in the text — the Settings labels ("Downloaded models", "Delete
   Downloaded Models", "Remove All App Data", "Restore Default Settings", "Check for updates
   automatically"), the main-window controls ("Browse Files", "Clear All", "Task", "Advanced",
-  "Temperature", "Transcribe", "Copy", "Export .txt") and the "Storage" section.
+  "Temperature", "Transcribe", "Copy", "Export .txt"), the "Storage" section, and the
+  **"Check for Updates…" menu command**.
 
 These are hand-written, but not unguarded: `labelsAppearInBothUIAndHelp` requires each tabled label
 to render **both** as a real control and somewhere in the help copy, so renaming one on either side
-trips it. **The keyboard shortcuts are the genuinely unguarded part** — they are not in that table
-and nothing checks them, so a rebind leaves the help book silently wrong. One tabled label
-("Transcribe") is only partially covered, and "Storage" is not in that table at all; see
+trips it. **The genuinely unguarded parts are the keyboard shortcuts and "Check for Updates…"** —
+the shortcuts because a `KeyEquivalent` isn't recoverable from the rendered hierarchy, and the menu
+command because it is not a control in either inspected view. Nothing checks either, so a rebind or
+a rename leaves the help book silently wrong. One tabled label ("Transcribe") is only partially
+covered, and "Storage" is not in that table at all; see
 [testing.md#the-help-book-is-wiring-protected-not-wording-protected](testing.md#the-help-book-is-wiring-protected-not-wording-protected).
 
 ---

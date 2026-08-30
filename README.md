@@ -134,7 +134,7 @@ installed.
 > for updates. The `.dmg` is the one to grab for a first install.
 
 The maintainer release process — version bumps, tagging, and the publish workflow — is documented
-in [AGENTS.md](AGENTS.md) ("Distribution & updates").
+in [docs/distribution.md](docs/distribution.md).
 
 ## Uninstalling
 

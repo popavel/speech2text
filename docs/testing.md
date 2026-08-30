@@ -208,8 +208,13 @@ button and `DecodingTask.transcribe.displayName` (the Task picker option), so re
 alone would still find the text and pass. It is kept for the prose-side and simultaneous-rename
 coverage it does provide.
 
+One more label escapes the table entirely: **"Check for Updates…"**, which the help book names but
+which is a *menu command* (`CheckForUpdatesCommand`), not a control in either inspected view — so
+there is nothing for the control-side check to find. Renaming it (dropping the ellipsis, say) leaves
+the help book wrong and the whole suite green.
+
 So of the labels the help book names: 12 are fully guarded, "Transcribe" partially, "Storage" by a
-different test, and the three shortcuts not at all.
+different test, and "Check for Updates…" plus the three keyboard shortcuts not at all.
 
 `HelpDetailView`'s `.id(topic)` gives the `ScrollView` a fresh identity per topic so the reused
 detail slot resets its scroll offset on a switch; a test pins that so the reset can't be silently

@@ -14,10 +14,10 @@ because nothing has to be built without it. (An earlier, unmerged experiment car
 dual-channel setup; going App-Store-free is what makes all that scaffolding unnecessary. Don't
 reintroduce it without a channel that needs it.)
 
-The Sparkle seam and the release pipeline are one file on purpose: the same handful of facts were
-written out in `Updater.swift`, `AGENTS.md`, `publish-release.yml`, `Info.plist` **and**
-`.github/workflows/README.md`, and splitting them re-opens that seam. (`AGENTS.md` still carries its
-copy until the migration finishes — see [README.md](README.md).)
+The Sparkle seam and the release pipeline are one file on purpose: the same handful of facts used
+to be written out in `Updater.swift`, `AGENTS.md`, `publish-release.yml`, `Info.plist` **and**
+`.github/workflows/README.md`, and splitting them re-opens that seam. `AGENTS.md` now keeps only the
+steps a maintainer performs — the version bump and the release runbook — and points here.
 
 ---
 

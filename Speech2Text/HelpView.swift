@@ -59,7 +59,8 @@ enum HelpTopic: String, CaseIterable, Identifiable {
 /// Facts that can drift from the code are DERIVED from `TranscriptionManager`'s canonical `static`
 /// declarations and covered by `HelpViewTests`. The rest is hand-written prose, guarded unevenly:
 /// `labelsAppearInBothUIAndHelp` catches a rename of most control labels, but "Storage" and a
-/// button-only "Transcribe" rename slip through it, and the keyboard shortcuts nothing checks.
+/// button-only "Transcribe" rename slip through it, and nothing at all checks the keyboard
+/// shortcuts or the "Check for Updates…" menu command.
 /// Why: docs/architecture.md#the-help-books-derived-facts
 struct HelpView: View {
     /// The help book's title — one source shared by the `Window` scene, the Help-menu item (both in

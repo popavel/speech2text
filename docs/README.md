@@ -5,13 +5,21 @@ one-sentence summary and a pointer; this folder carries the argument.
 
 Linked from the root [README.md](../README.md#documentation).
 
-> **Migration in progress.** This folder was written first, from the comments it consolidates, so
-> the prose could be reviewed against its source side by side. `Speech2Text/` has since been
-> trimmed, as have the heaviest files in the three test targets, the shared fixtures,
-> `.github/workflows/`, `.claude/`, `project.yml` and `Info.plist`; the two folder READMEs are now
-> stubs pointing here. Still to come: `SettingsPersistenceTests`, `DecodingParametersTests`,
-> `TranscriptionManagerTests`, `AudioExtractionIntegrationTests` and `MediaFixtures` (all already
-> under 16% and carrying no essays), and slimming `AGENTS.md`.
+> **Migration complete.** This folder was written first, from the comments it consolidates, so the
+> prose could be reviewed against its source side by side; the code was then trimmed to summaries,
+> `Why:` pointers and tripwires. `AGENTS.md` is now the contract and this folder the reference.
+>
+> A small amount of duplication between them is **deliberate**: the version-lockstep rule, the
+> release runbook, the draft/prerelease prohibition and the tripwire list appear in both, because
+> `AGENTS.md` is auto-loaded into every agent's context and an agent may never open `docs/`. Those
+> are the steps an agent performs; everything explaining *why* lives here only. When one of them
+> changes, change both.
+>
+> Four test files were left as they were — `DecodingParametersTests`, `TranscriptionManagerTests`,
+> `AudioExtractionIntegrationTests` and `MediaFixtures`. All are already under 16% comments and
+> carry per-assertion notes rather than essays, which the 4-line threshold leaves in place.
+> (`SettingsPersistenceTests` was touched only to correct a stale claim about how a persisted
+> language resolves, not to trim it.)
 
 [AGENTS.md](../AGENTS.md) is the *contract* — the commands, the workflow, and the prohibitions an
 agent must follow before it acts. This folder is the *reference* — what a maintainer reads when
@@ -105,8 +113,8 @@ has been lost if every row is present at its site and its anchor holds the full 
 Every one is findable with a keyword sweep over the code — that keyword set is the convention,
 so a warning phrased any other way is invisible to the sweep and does not count. **Rows marked
 _(pending)_ are not in the tree yet**: their file has not been trimmed. Drop the marker as each
-lands. The raw sweep returns slightly more hits than there are unmarked rows, and the difference is
-exactly accountable:
+lands — none are pending today. The raw sweep returns slightly more hits than there are rows, and
+the difference is exactly accountable:
 
 - unmarked rows in the table below — **40**
 - plus 1: the "both KVO handlers" row covers two sites in the updater
