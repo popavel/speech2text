@@ -7,11 +7,11 @@ Linked from the root [README.md](../README.md#documentation).
 
 > **Migration in progress.** This folder was written first, from the comments it consolidates, so
 > the prose could be reviewed against its source side by side. `Speech2Text/` has since been
-> trimmed, as have the heaviest files in the three test targets and the shared fixtures, and the
-> tripwires in `project.yml`, `feature.yml`, `main.yml` and `release.yml` are in place. Still to
-> come: `SettingsPersistenceTests`, `DecodingParametersTests`, `TranscriptionManagerTests`,
-> `AudioExtractionIntegrationTests` and `MediaFixtures`; the rest of `.github/workflows/`;
-> `.claude/`; `Info.plist`; and slimming `AGENTS.md`.
+> trimmed, as have the heaviest files in the three test targets, the shared fixtures,
+> `.github/workflows/`, `.claude/`, `project.yml` and `Info.plist`; the two folder READMEs are now
+> stubs pointing here. Still to come: `SettingsPersistenceTests`, `DecodingParametersTests`,
+> `TranscriptionManagerTests`, `AudioExtractionIntegrationTests` and `MediaFixtures` (all already
+> under 16% and carrying no essays), and slimming `AGENTS.md`.
 
 [AGENTS.md](../AGENTS.md) is the *contract* — the commands, the workflow, and the prohibitions an
 agent must follow before it acts. This folder is the *reference* — what a maintainer reads when
@@ -108,11 +108,11 @@ _(pending)_ are not in the tree yet**: their file has not been trimmed. Drop the
 lands. The raw sweep returns slightly more hits than there are unmarked rows, and the difference is
 exactly accountable:
 
-- unmarked rows in the table below — **33**
+- unmarked rows in the table below — **40**
 - plus 1: the "both KVO handlers" row covers two sites in the updater
 - plus 1: the main/release workflow row covers two sites
 - plus 1: an incidental "MUST be" in review-workflow prose, not a tripwire
-- **sweep total — 36**
+- **sweep total — 43**
 
 The sweep is over code, not prose:
 
@@ -162,5 +162,11 @@ deleted from the tree.
 | `StallWatchdogTests.swift` — timing margins | Widen the budget, never delete the test | [testing.md#the-flake-budget](testing.md#the-flake-budget) |
 | `project.yml` — the Sparkle package | Never re-add a tarball download | [distribution.md#the-appcast](distribution.md#the-appcast) |
 | `publish-release.yml` — `generate_appcast` | Never re-add a tarball download | [distribution.md#the-appcast](distribution.md#the-appcast) |
+| `publish-release.yml` — the keypair check | Capture then match, never pipe to `grep -q` | [distribution.md#the-keypair-check](distribution.md#the-keypair-check) |
+| `publish-release.yml` — the `--latest` query | Don't add `|| true` | [distribution.md#claiming---latest](distribution.md#claiming---latest) |
+| `publish-release.yml` — `concurrency` | Keep it keyed per tag | [distribution.md#concurrency-is-keyed-per-tag](distribution.md#concurrency-is-keyed-per-tag) |
+| `claude-code-review.yml` — the trigger | Never switch to `pull_request_target` | [automation.md#review-and-fix-loop](automation.md#review-and-fix-loop) |
+| `commit-guard.sh` — the `jq` check | Must fail closed | [automation.md#the-commit-guard](automation.md#the-commit-guard) |
+| `precommit-hash.sh` — the empty-tree case | Must emit nothing | [automation.md#the-commit-guard](automation.md#the-commit-guard) |
 | `main.yml` / `release.yml` — the commented `pull_request:` block | Re-check the concurrency key before enabling | [automation.md#push-only-deliberately-no-pull_request-trigger](automation.md#push-only-deliberately-no-pull_request-trigger) |
-| `Info.plist` — `SUFeedURL` _(pending)_ | Permanent; changing it strands installed copies | [distribution.md#the-seam](distribution.md#the-seam) |
+| `Info.plist` — `SUFeedURL` | Permanent; changing it strands installed copies | [distribution.md#sufeedurl-is-permanent](distribution.md#sufeedurl-is-permanent) |

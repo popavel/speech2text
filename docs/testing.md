@@ -105,8 +105,11 @@ preferences. Two seams keep the model testable without one:
   *structurally* cannot bring an `SPUUpdater`/`SUHost` into existence. This is what gives the
   model's **live** branch — seeding, both KVO mirrors, both write paths — real coverage.
 
-`FakeSparkleUpdater` is an `NSObject` with `@objc dynamic` storage because the model registers real
-KVO against it. The fakes only ever mutate on the main actor, which is precisely why they cannot
+`FakeSparkleUpdater` is an `NSObject` with `@objc dynamic` storage because it has to *vend* real
+`NSKeyValueObservation`s. The model never registers KVO itself — it calls the protocol's
+`observe*` methods and each conformer registers on its own storage, which is the whole reason the
+observations are vended rather than registered (KVO needs a concrete `Self` and a key path over an
+`@objc dynamic` property, neither of which an existential can express). The fakes only ever mutate on the main actor, which is precisely why they cannot
 catch an off-main KVO delivery — see
 [distribution.md#kvo-mirrors](distribution.md#kvo-mirrors).
 

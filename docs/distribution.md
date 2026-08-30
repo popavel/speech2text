@@ -16,8 +16,8 @@ reintroduce it without a channel that needs it.)
 
 The Sparkle seam and the release pipeline are one file on purpose: the same handful of facts were
 written out in `Updater.swift`, `AGENTS.md`, `publish-release.yml`, `Info.plist` **and**
-`.github/workflows/README.md`, and splitting them re-opens that seam. (`AGENTS.md` and the workflows
-README still carry their copies until the migration finishes — see [README.md](README.md).)
+`.github/workflows/README.md`, and splitting them re-opens that seam. (`AGENTS.md` still carries its
+copy until the migration finishes — see [README.md](README.md).)
 
 ---
 
@@ -418,6 +418,43 @@ every release. The check is **format-agnostic** on purpose too: asserting a shap
 alphanumerics, a UUID) would hardcode Apple's current formats and turn a format widening into a
 failed release, whereas "contains no whitespace" can never reject a credential that would otherwise
 work. Shell-metacharacter injection is closed by the `env:` blocks, not here.
+
+### The keypair check
+
+The preflight also proves `SPARKLE_ED_PRIVATE_KEY` and the `SUPublicEDKey` in `Info.plist` are **one
+keypair**. If the private key were rotated without updating the public half (or vice versa),
+`generate_appcast` would still happily sign and publish, and every installed copy would then
+**reject** the update — silently losing its update path with no way to push a fix. Checked in
+seconds rather than after ~45 minutes of building and two notarization round-trips.
+
+Sparkle's exported key is the raw 32-byte ed25519 **seed**, so the public half has to be derived by
+scalar multiplication — no shell-only byte slicing can do it. Wrapping the seed in a fixed PKCS#8
+prefix lets OpenSSL derive it, and that needs **real OpenSSL 3**: `/usr/bin/openssl` on macOS is
+LibreSSL, which doesn't support ed25519 here.
+
+Capture then match, never `… | grep -q`: a SIGPIPE under `pipefail` would leave the variable empty
+and silently downgrade the check to a warning. The same pattern guards the hardened-runtime check.
+
+An absent key decodes to 0 bytes and lands in the legacy-format branch — which exists so a *valid*
+key is never accused of not matching — so this check cannot substitute for the presence check above.
+
+### Claiming `--latest`
+
+The feed URL is `releases/latest/download/appcast.xml`, and GitHub's `latest` redirect skips drafts
+**and** prereleases. So the publish step claims `--latest` only if this really is the newest
+release: two tags can be in flight at once, and the run that finishes last must not drag the feed
+back to an older build.
+
+**Only version tags take part in the comparison.** A single non-version release tag (say `nightly`)
+would otherwise sort above every `vX.Y.Z` and permanently pin the highest, so every future release
+would publish with `--latest=false` and the feed would freeze — visible only as a warning on an
+otherwise green job. Prereleases are excluded for the mirror-image reason: a published prerelease
+must not veto this release's claim.
+
+**No `|| true` on that query, deliberately.** An empty list is indistinguishable from a transient API
+error, and guessing "there is nothing newer" is exactly how an older concurrent release would steal
+`--latest` and drag the feed backwards. Failing instead leaves an invisible draft — `releases/latest`
+keeps serving the previous good release — and the stranded-draft alarm says to re-run.
 
 ---
 

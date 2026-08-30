@@ -34,8 +34,10 @@ App-wide settings live at **project level** so every target inherits one definit
   Sparkle are imported `@preconcurrency` (binary/ObjC frameworks without full `Sendable`
   annotations). New async code crossing the actor boundary must respect this — see
   [concurrency.md](concurrency.md).
-- **Deployment target is macOS 26 (Tahoe).** APIs like `AVAssetExportSession.export(to:as:)` and the
-  `@Observable` macro require it. Don't lower it without updating `project.yml` and regenerating.
+- **Deployment target is macOS 26 (Tahoe).** This is a product decision, not an API floor — the
+  newest APIs the app uses (`AVAssetExportSession.export(to:as:)`, the `@Observable` macro) are
+  available earlier than 26. The binding constraint is the arm64-only argument below. Lowering it
+  means updating `project.yml`, regenerating, and auditing what actually stops compiling.
 - **CI pins Xcode 26.4.1** on `macos-26` runners.
 
 ### arm64 only

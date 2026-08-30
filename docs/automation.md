@@ -4,10 +4,8 @@ Two halves, deliberately separate: **local** automation that runs on your Mac in
 Code session (no API key, no extra subscription), and **GitHub** workflows that run on GitHub's
 runners. Both are indexed here.
 
-> **Migration in progress.** `.github/workflows/README.md` and `.claude/README.md` still carry the
-> full prose (and still point at `AGENTS.md`); they are reduced to one-line-per-file stubs pointing
-> back to this page in a later commit. Until then the material is duplicated — see
-> [README.md](README.md) for the plan.
+`.github/workflows/README.md` and `.claude/README.md` are one-line-per-file stubs that point here;
+this page is the reference.
 
 All bot workflows authenticate the model via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret —
 **subscription auth, not a pay-as-you-go API key**. Generate it locally with `claude setup-token`

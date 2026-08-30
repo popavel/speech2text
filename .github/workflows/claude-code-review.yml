@@ -1,21 +1,9 @@
 name: Claude Code Review
 
-# Automatic review of every PR: runs the `/code-review` command (the version
-# bundled with claude-code-action) and posts its findings as inline PR comments.
-# Static review (no build), on a cheap Linux runner.
+# Automatic inline review of every PR push. Static (no build), on a cheap Linux runner.
 #
-# Auth: uses a Claude subscription (Pro/Max) via an OAuth token, NOT a pay-as-you-go
-# API key. Generate it locally with `claude setup-token` and store it as the repo
-# secret CLAUDE_CODE_OAUTH_TOKEN (Settings → Secrets and variables → Actions).
-#
-# Cost note: the review fans out subagents on EVERY push (synchronize). The
-# concurrency block below cancels a superseded review when a new push lands; if it
-# is still too heavy, drop `synchronize` from the triggers (review only on `opened`).
-#
-# Fork PRs: this uses `pull_request` (NOT `pull_request_target`), so a PR from a fork
-# runs with no secrets and a read-only token — the review silently no-ops on forks.
-# That is intentional: `pull_request_target` would run untrusted fork code with our
-# secrets. Same-repo (feature/**) PRs are the supported path.
+# NEVER switch this to `pull_request_target` — it would run untrusted fork code with our secrets.
+# Why: docs/automation.md#review-and-fix-loop
 on:
   pull_request:
     types: [opened, synchronize]

@@ -1,23 +1,9 @@
 name: Dependency Drift Check
 
-# Our SwiftPM dependencies are pinned with `from:` constraints (see project.yml):
-# WhisperKit `from: "1.0.0"` and ViewInspector `from: "0.10.3"`, plus their
-# transitives (e.g. swift-argument-parser). `from:` is up-to-next-major, so any of
-# them can ship a newer release within its pinned major that breaks our build at any
-# time. This weekly job drops Package.resolved and re-resolves the WHOLE graph to the
-# latest release each `from:` allows, builds + tests, and either opens a PR (still
-# green → bump Package.resolved) or files an issue tagging @claude (broken → needs
-# adapting).
-#
-# NOTE: `from:` never crosses a major boundary, so a new major of ANY dependency
-# (e.g. WhisperKit v2.0.0) is NOT picked up here — that requires a manual `from:`
-# bump in project.yml. This check covers within-major drift only.
-#
-# GITHUB_TOKEN limits (intentional — no PAT): both the PR and the issue below are
-# created with the Actions token, so GitHub's loop-prevention means the PR carries
-# NO status checks of its own (the build + test ran in THIS job, not on the PR) and
-# the issue's "@claude" mention does NOT auto-summon the bot. A maintainer reviews /
-# re-runs CI on the PR, and re-invokes @claude on the issue.
+# Weekly: drop Package.resolved, re-resolve the whole SwiftPM graph to the latest release each
+# `from:` allows, build + test, then open a PR (green) or file an issue tagging @claude (broken).
+# Covers within-major drift only, and its PR carries no status checks of its own.
+# Why: docs/automation.md#dependency-drift
 on:
   schedule:
     - cron: '0 6 * * 1'   # Mondays 06:00 UTC
@@ -94,13 +80,9 @@ jobs:
           xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
             -configuration Debug -destination 'platform=macOS' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | xcbeautify
-          # The default test pass exercises ViewInspector (the view-render suite) and
-          # the rest of the graph. Additionally un-gate the end-to-end WhisperKit suite
-          # (downloads the ~75 MB tiny model and actually transcribes) — otherwise the
-          # drift check would only prove WhisperKit still *compiles*, not that it still
-          # *runs*, which is the whole point of catching upstream drift. xcodebuild
-          # forwards env vars prefixed TEST_RUNNER_ to the test process with the prefix
-          # stripped (→ RUN_WHISPERKIT_TESTS).
+          # Un-gate the end-to-end WhisperKit suite too, so drift proves WhisperKit still *runs*
+          # and not merely still *compiles*.
+          # Why: docs/testing.md#whisperkit-drift
           TEST_RUNNER_RUN_WHISPERKIT_TESTS=1 \
           xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
             -destination 'platform=macOS' \

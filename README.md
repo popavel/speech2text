@@ -208,10 +208,10 @@ The first three are thin callers of the shared `build-and-test.yml` job (Xcode 2
 `macos-26` runner), and each also calls the integration and UI-test jobs once that is green;
 `publish-release.yml` gates on the same build/test job before it signs anything.
 
-See [.github/workflows/README.md](.github/workflows/README.md) for a per-workflow overview
-(including the Claude automation) and its known limitations, and
-[.claude/README.md](.claude/README.md) for the local Claude automation — commands, agents, and
-the commit-guard hooks — and its caveats.
+[.github/workflows/README.md](.github/workflows/README.md) and
+[.claude/README.md](.claude/README.md) list what runs when;
+[docs/automation.md](docs/automation.md) explains how it fits together and tables the known
+limitations of both the CI automation and the local commit guard.
 
 ## License
 

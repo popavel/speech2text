@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
-# PreToolUse(Bash) commit guard — governs how the AGENT commits.
-#
-# Commits you type in a real terminal never reach this hook; it only ever sees
-# Bash commands Claude runs. Behaviour for the agent:
-#   - on main/master            -> blocked outright
-#   - on a feature branch       -> blocked UNLESS a /precommit review marker
-#                                  matches the currently-staged tree
+# PreToolUse(Bash) commit guard — governs how the AGENT commits. Commits you type in a real
+# terminal never reach it. Blocked outright on main/master; on a feature branch, blocked unless a
+# /precommit review marker matches the currently-staged tree.
+# Why: docs/automation.md#the-commit-guard
 set -u
 
-# Fail closed if jq is unavailable: without it we can neither parse the command
-# (the detector would match nothing and silently allow) nor emit a deny via
-# deny(). Emit the fixed deny JSON directly — no jq required for this static string.
+# MUST fail closed without jq — the detector would otherwise match nothing and silently allow.
+# Why: docs/automation.md#the-commit-guard
 if ! command -v jq >/dev/null 2>&1; then
   printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"commit-guard: jq not found on PATH — denying to fail closed. Install jq so the commit guard can run."}}'
   exit 0
@@ -19,12 +15,9 @@ fi
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
 
-# Act only on a real `git commit` at a COMMAND position — start of a line (grep
-# matches line by line, so `^` also covers newline-separated commands), right after
-# a separator (`;` `&` `|` `(` or command substitution), or after an env-var prefix
-# (`VAR=val git commit`; the `=` distinguishes it from prose). This leaves
-# `git commit-tree`, `git committed`, and — unlike a bare word-boundary match —
-# quoted/echoed prose mentions of "git commit" alone.
+# Act only at a COMMAND position: start of line, after a separator, or after an env-var prefix.
+# Leaves the -tree and -ed variants, and most quoted prose, alone.
+# Why: docs/automation.md#known-limitations
 printf '%s' "$cmd" | grep -Eq '(^|[;&|`(]|[^[:space:]]+=[^[:space:]]*[[:space:]]+)[[:space:]]*git[[:space:]]+commit($|[^[:alnum:]_-])' || exit 0
 
 deny() {
@@ -39,13 +32,9 @@ case "$branch" in
     ;;
 esac
 
-# Refuse working-tree staging flags (-a/--all/-p/--patch/--include): they record
-# changes the review never saw, because the marker covers only the staged index
-# (`git diff --cached HEAD`). /precommit stages explicitly and commits with `-m`, so
-# it is unaffected. Inspect only the commit's OWN args — from the `git commit`
-# keyword to the next command separator — so flags on a CHAINED command (e.g.
-# `git add --all && git commit`, `ls -la && git commit`) don't trip this. (A literal
-# " -a " inside the commit message is still refused — conservative, safe, fail-closed.)
+# Refuse working-tree staging flags: they record changes the review never saw. Only the commit's
+# OWN args are inspected, so flags on a chained command don't trip this.
+# Why: docs/automation.md#the-commit-guard
 commit_args=$(printf '%s' "$cmd" | sed -E 's/.*git[[:space:]]+commit//')
 commit_args=${commit_args%%[;&|]*}
 if printf '%s' "$commit_args" | grep -Eq '(^|[[:space:]])(--all|--patch|--include|-[A-Za-z]*[ap][A-Za-z]*)([[:space:]]|=|$)'; then

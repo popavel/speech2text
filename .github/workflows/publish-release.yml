@@ -1,24 +1,11 @@
 name: Publish Release
 
-# The distribution pipeline. On a `vX.Y.Z` tag it produces a Developer ID-signed,
-# hardened-runtime, notarized + stapled Release build and publishes two artifacts plus a
-# Sparkle appcast onto a GitHub Release:
+# The distribution pipeline: on a `vX.Y.Z` tag, a Developer ID-signed, notarized, stapled Release
+# build published as a zip (the Sparkle payload), a DMG, an EdDSA-signed appcast and dSYMs.
+# Created as a DRAFT while assets upload, flipped to published last.
+# Why: docs/distribution.md#draft-first-publish-last
 #
-#   * Speech2Text-X.Y.Z.zip  — the Sparkle update payload (the format generate_appcast consumes)
-#   * Speech2Text-X.Y.Z.dmg  — the human download linked from the project website
-#   * appcast.xml            — the EdDSA-signed update feed installed apps poll
-#   * Speech2Text-X.Y.Z-dSYMs.zip — symbols for crash symbolication
-#
-# The release is created as a DRAFT while assets upload, then flipped to published in one final
-# step: `releases/latest` (the live feed URL baked into every shipped binary) already redirects
-# to this tag while the assets are still uploading, so a non-draft release would 404 for apps
-# polling in that window.
-#
-# Required repository secrets:
-#   DEVID_CERT_P12_BASE64 / DEVID_CERT_PASSWORD — Developer ID Application cert
-#   APPLE_TEAM_ID                                — signing team
-#   ASC_KEY_ID / ASC_ISSUER_ID / ASC_API_KEY_P8  — App Store Connect API key (for notarytool)
-#   SPARKLE_ED_PRIVATE_KEY                       — Sparkle EdDSA private key (generate_keys -x)
+# Needs seven repository secrets — see docs/distribution.md#secrets.
 
 on:
   push:
@@ -26,14 +13,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
-# Keyed per TAG, deliberately. A repo-wide group would serialize publishes, but GitHub keeps only
-# one *pending* run per group and cancels the previously pending one — push v0.0.2, v0.0.3, v0.0.4
-# in quick succession and v0.0.3's run is discarded without executing a step, leaving a tag with
-# nothing published. Concurrent publishes are instead handled where they actually race: the
-# "Publish the release" step below declines `--latest` when a newer release already exists, and
-# re-checks afterwards. That check is best-effort, NOT atomic — GitHub offers no compare-and-set
-# for the latest flag, so two publishes finishing within the same few seconds can still interleave;
-# the post-flip re-check is what turns that into a loud warning instead of a silent regression.
+# MUST stay keyed per TAG — a repo-wide group would let GitHub discard a pending publish, leaving a
+# tag with nothing published.
+# Why: docs/distribution.md#concurrency-is-keyed-per-tag
 concurrency:
   group: publish-release-${{ github.ref }}
   cancel-in-progress: false
@@ -91,22 +73,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Every secret this job needs, asserted HERE rather than at the step that happens to
-          # consume it. GitHub substitutes an EMPTY STRING for a secret that does not exist, so a
-          # renamed secret, a re-created repo, or a workflow_dispatch from an environment without
-          # them looks identical to a good run until: APPLE_TEAM_ID fails at codesign (~20m), the
-          # ASC_* trio at notarization (~25m), SPARKLE_ED_PRIVATE_KEY at generate_appcast (~45m,
-          # after two notarization round-trips — and note the keypair check below cannot catch
-          # that one, because an absent key decodes to 0 bytes and lands in its legacy-format
-          # branch, which exists to avoid accusing a VALID key of not matching).
-          # Collect ALL of them before reporting — one missing secret per re-tag is a miserable
-          # way to configure a repo. Names only, never values: these are masked in logs, and
-          # nothing here changes that.
-          # DEVID_CERT_PASSWORD is deliberately ABSENT from this list: a .p12 can legitimately
-          # be exported with an empty password, and `security import -P ""` accepts one — so
-          # here, unlike every other entry, "empty" is a valid configuration rather than a
-          # missing secret. It is also consumed before the build (~2m in), so it has nothing to
-          # gain from an early warning.
+          # Asserted HERE, not at the consuming step: GitHub substitutes an empty string for a
+          # missing secret, so the run looks fine until it fails 20-45 minutes in. All collected
+          # before reporting; names only, never values. DEVID_CERT_PASSWORD is deliberately absent
+          # (an empty .p12 password is valid).
+          # Why: docs/distribution.md#why-the-preflight-checks-the-secrets
           MISSING=""
           for name in DEVID_CERT_P12_BASE64 APPLE_TEAM_ID \
                       ASC_KEY_ID ASC_ISSUER_ID ASC_API_KEY_P8 SPARKLE_ED_PRIVATE_KEY; do
@@ -120,23 +91,10 @@ jobs:
             exit 1
           }
 
-          # …and the three single-token identifiers must carry no stray whitespace. A value
-          # pasted out of App Store Connect or the Developer portal with a trailing newline is
-          # still "present", so the loop above waves it through — and it is not a parse error at
-          # the consuming site either, because every one of them double-quotes it: the newline
-          # rides along INSIDE the argument. DEVELOPMENT_TEAM="TEAM\n" then fails codesign ~20m
-          # in, and a notarytool --key-id/--issuer carrying one fails auth ~25m in with a
-          # credentials error that names nothing. Note `env:` does NOT help here — an environment
-          # variable preserves a trailing newline exactly. Only this check catches it, in seconds.
-          #
-          # Scoped to these three on purpose: the other three secrets are legitimately
-          # multi-line — DEVID_CERT_P12_BASE64 and SPARKLE_ED_PRIVATE_KEY are base64 (wrapped
-          # output is normal, and `base64 -d` tolerates it) and ASC_API_KEY_P8 is a PEM — so
-          # whitespace-checking them would reject valid credentials and block every release.
-          # Format-agnostic on purpose too: asserting a shape (10 alphanumerics, a UUID) would
-          # hardcode Apple's current formats and turn a format widening into a failed release,
-          # whereas "contains no whitespace" can never reject a credential that would otherwise
-          # work. Shell-metacharacter injection is closed by the `env:` blocks, not here.
+          # A trailing newline on one of the three single-token IDs is "present" but fails
+          # codesign/notarization 20-25 minutes in with an error that names nothing. Scoped to
+          # these three (the others are legitimately multi-line) and format-agnostic on purpose.
+          # Why: docs/distribution.md#why-the-preflight-checks-the-secrets
           MALFORMED=""
           for name in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID; do
             value="${!name-}"
@@ -199,18 +157,12 @@ jobs:
             *) echo "::error::SUFeedURL ($SPARKLE_FEED) does not point at ${GITHUB_REPOSITORY} — a build published from here would poll a different repository's update feed. Update Info.plist before releasing from this repo."; exit 1 ;;
           esac
 
-          # The two halves must be ONE keypair. If the private key were rotated without updating
-          # SUPublicEDKey (or vice versa), generate_appcast would still happily sign and publish,
-          # and every installed copy would then REJECT the update — silently losing its update
-          # path with no way to push a fix. Checked here, in seconds, rather than after ~45
-          # minutes of building and two notarization round-trips.
-          #
-          # Sparkle's exported key is the raw 32-byte ed25519 SEED, so the public half has to be
-          # derived by scalar multiplication — no shell-only byte slicing can do it. Wrapping the
-          # seed in the fixed PKCS#8 prefix lets OpenSSL derive it. Needs real OpenSSL 3:
-          # /usr/bin/openssl on macOS is LibreSSL, which does not support ed25519 here.
-          # Capture then match, never `… | grep -q` — see the hardened-runtime check. A SIGPIPE
-          # here would leave SSL empty and silently downgrade the keypair check to a warning.
+          # The two halves must be ONE keypair, or every installed copy rejects the update and
+          # silently loses its update path. Needs real OpenSSL 3 (macOS ships LibreSSL, which
+          # can't do ed25519 here).
+          # MUST capture then match, never `… | grep -q` — a SIGPIPE under pipefail would leave
+          # the variable empty and downgrade this check to a warning.
+          # Why: docs/distribution.md#the-keypair-check
           SSL=""
           for c in "$(brew --prefix openssl@3 2>/dev/null)/bin/openssl" openssl; do
             command -v "$c" >/dev/null 2>&1 || continue
@@ -483,23 +435,13 @@ jobs:
           ditto -c -k --sequesterRsrc dsymstage "dsyms/Speech2Text-${VERSION}-dSYMs.zip"
 
       # ---------------------------------------------------------------------------------------
-      # The appcast. generate_appcast comes out of the package store this job already resolved:
-      # Sparkle ships its CLI tools inside the same zip the framework comes from, which SwiftPM
-      # fetches for a binaryTarget(checksum:) and rejects on a SHA-256 mismatch, at a revision
-      # pinned in Package.resolved. So the tool that receives the EdDSA private key is the exact
-      # artifact the app embeds, integrity-checked. NEVER re-download it — Sparkle's release
-      # tarballs are ad-hoc signed, so a download can't be verified and would hand a signing
-      # secret to unauthenticated code.
+      # The appcast. generate_appcast comes out of the package store this job already resolved, so
+      # the tool that receives the EdDSA private key is the exact artifact the app embeds.
+      # NEVER re-download it — Sparkle's release tarballs are ad-hoc signed.
       # Why: docs/distribution.md#the-appcast
       #
-      # KNOWN LIMITATION — the feed carries exactly ONE item. `artifacts/` is fresh every run and
-      # the previous appcast is never fetched, so each release regenerates a single-entry feed.
-      # That is fine while every supported Mac can run the newest build, but it has two
-      # consequences to fix before they bite: (1) if a future release raises
-      # LSMinimumSystemVersion, users on the older OS see a feed with no item they can install and
-      # silently lose their update path — they would need an older entry retained; (2) Sparkle
-      # cannot offer delta updates, which need the previous archives present here. The fix in both
-      # cases is to download the prior release's archives into `artifacts/` before this step.
+      # Known limitation: the feed carries exactly one item.
+      # See: docs/distribution.md#the-appcast-carries-exactly-one-item
       # ---------------------------------------------------------------------------------------
       - name: Generate the signed appcast
         env:
@@ -583,23 +525,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # `--latest` matters: the feed URL is `releases/latest/download/appcast.xml`, and the
-          # latest redirect skips drafts and prereleases. But claim it only if this really IS the
-          # newest release — two tags can be in flight at once (see the concurrency note at the
-          # top), and the run that finishes last must not drag the feed back to an older build.
-          # Only version tags take part in the comparison: a single non-version release tag
-          # (say "nightly") would otherwise sort above every vX.Y.Z and permanently pin HIGHEST
-          # elsewhere, so every future release would publish with --latest=false and the feed
-          # would freeze — visible only as a warning on an otherwise green job.
-          # Drafts AND prereleases are excluded: GitHub's `latest` redirect skips both, so a
-          # published prerelease must not veto this release's claim to the flag — that would
-          # freeze the feed on an older build while the job stayed green.
-          #
-          # NO `|| true` here, deliberately: an empty list is indistinguishable from a transient
-          # API error, and guessing "there is nothing newer" is exactly how an older concurrent
-          # release would steal `--latest` and drag the feed backwards. Failing leaves an
-          # invisible draft — `releases/latest` keeps serving the previous good release — and the
-          # alarm below says to re-run.
+          # Claim `--latest` only if this really is the newest release; only version tags take
+          # part in the comparison, and drafts and prereleases are excluded.
+          # DO NOT add `|| true` here — an empty list is indistinguishable from a transient API
+          # error, and guessing "nothing is newer" drags the feed backwards.
+          # Why: docs/distribution.md#claiming---latest
           if ! PUBLISHED=$(gh release list --limit 100 --json tagName,isDraft,isPrerelease \
             -q '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' 2>&1); then
             echo "::error::could not list releases, so it is unknown whether ${GITHUB_REF_NAME} should take the latest flag. Refusing to guess: re-run this workflow. (gh said: ${PUBLISHED})"
