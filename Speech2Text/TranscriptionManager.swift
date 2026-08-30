@@ -214,12 +214,10 @@ class TranscriptionManager {
         loadPersistedSettings()
     }
 
-    /// Overlay any persisted settings onto the declared defaults. Absent or invalid values leave
-    /// both the in-memory default AND the stored value untouched — e.g. a model id no longer offered
-    /// after an app update, or a language WhisperKit has dropped, stays on disk so it resolves again
-    /// if that entry returns (rather than being erased to `.auto` on a mere launch). Called once from
-    /// `init`; each *successful* assignment is idempotent with the property's `didSet` (it writes
-    /// back the value just read).
+    /// Overlay any persisted settings onto the declared defaults. An absent or invalid value leaves
+    /// both the in-memory default AND the stored value untouched, so an id that stops resolving is
+    /// preserved rather than erased on a mere launch.
+    /// Why: docs/architecture.md#persisted-settings
     private func loadPersistedSettings() {
         if let raw = defaults.string(forKey: Keys.model), let model = WhisperModel(rawValue: raw) {
             selectedModel = model
@@ -236,10 +234,9 @@ class TranscriptionManager {
         }
     }
 
-    /// Reset the four user settings to their defaults: Transcribe, Base model, temperature 0,
-    /// Auto-detect language. Each assignment's `didSet` re-persists, so the store reflects the reset
-    /// too. Does not touch the loaded engine — the model only (re)loads on the next
-    /// `startTranscription`, so restoring `.base` never triggers a download from here.
+    /// Reset the four user settings to their defaults. Each assignment's `didSet` re-persists, and
+    /// the loaded engine is deliberately untouched.
+    /// Why: docs/architecture.md#persisted-settings
     func restoreDefaults() {
         selectedTask = Defaults.task
         selectedModel = Defaults.model
@@ -479,35 +476,10 @@ class TranscriptionManager {
 
     /// Download and load `modelName`, replacing any engine already loaded.
     ///
-    /// This is `WhisperKit(model:downloadBase:)` taken apart into its two phases so the download
-    /// half can be watched. It is a faithful split, not a reinterpretation: with a non-nil `model`,
-    /// WhisperKit's own `setupModels` passes the name straight to `WhisperKit.download(variant:)`
-    /// with these same repo/endpoint defaults, and constructing with `download: false` and no
-    /// `modelFolder` is a no-op rather than an error. `downloadBase` keeps models in our app-owned
-    /// Application Support folder (see `modelCacheDirectory`) instead of the Hub default
-    /// `~/Documents/huggingface`.
-    ///
-    /// **Both phases are bounded, but not in the same way.** The download reports progress, so it
-    /// gets a true stall watchdog: slow is fine, silent is not. `loadModels()` cannot be watched
-    /// that way — it reports nothing a watchdog could read, and Core ML specialization is
-    /// legitimately slow the first time a model meets a chip — so it gets a plain ceiling instead,
-    /// deliberately far beyond any real load.
-    ///
-    /// It needs one: `loadModels()` is NOT purely local. It ends in `loadTokenizerIfNeeded()`,
-    /// which falls back to fetching the tokenizer from the Hub whenever no local `tokenizer.json`
-    /// is found — the normal first-run case. That download can wedge exactly like the model
-    /// download can, and it would pin `.loadingModel` forever. A half-hour ceiling is a poor error
-    /// message but a correct backstop: the busy flag clears, so the UI and Sparkle's
-    /// relaunch-postpone loop both come back.
-    ///
-    /// Splitting the phases also moves loading INTO `.loadingModel`, where the status line already
-    /// claims it happens. WhisperKit defers loading to the first `transcribe(...)` call otherwise —
-    /// same work, but reported as transcription progress. `transcribe` won't reload what is already
-    /// loaded, so nothing happens twice.
-    ///
-    /// Assignment is deliberately last: a partial download leaves a snapshot that `loadModels()`
-    /// rejects, and caching a half-built engine would make every later run fail the same way from
-    /// the "already loaded" fast path.
+    /// A faithful split of `WhisperKit(model:downloadBase:)` into its two phases, so the download
+    /// half gets a stall watchdog and the load half a plain ceiling. Assignment is deliberately
+    /// last.
+    /// Why: docs/concurrency.md#two-phase-model-load
     private func loadModel(named modelName: String) async throws {
         let ticker = ProgressTicker()
         let downloadBase = Self.modelCacheDirectory
@@ -543,22 +515,16 @@ class TranscriptionManager {
         )
         kit.modelFolder = modelFolder
 
-        // Release the engine we're replacing BEFORE the new one allocates its weights. Holding
-        // both across the load would roughly double peak memory on a model switch — the old code
-        // never did, because it left loading to the first `transcribe(...)`, by which point the
-        // old engine was already gone. On failure this leaves no engine loaded, which costs a
-        // reload from the on-disk cache and keeps `loadedModel` honest about what's in memory.
-        //
-        // This covers the ordinary switch, not the ceiling timeout below: an abandoned
-        // `loadModels()` keeps `kit` alive until it finishes on its own, so a retry after that
-        // rare failure really can hold two sets of weights. Core ML loading isn't cancellable in
-        // any way we could rely on, so there is nothing better to do than let it finish.
+        // MUST release the old engine before the new one allocates — holding both across the load
+        // roughly doubles peak memory on a model switch.
+        // Why: docs/concurrency.md#engine-release-ordering
         whisperKit = nil
         loadedModel = nil
 
         do {
             // Nothing ticks this one: Core ML reports no progress, so the watchdog degenerates
-            // into the plain ceiling this phase wants. See the doc comment above.
+            // into the plain ceiling this phase wants.
+            // Why: docs/concurrency.md#two-phase-model-load
             try await Self.withStallWatchdog(
                 idle: Self.modelLoadCeiling,
                 poll: Self.modelDownloadPollInterval,
@@ -658,20 +624,14 @@ class TranscriptionManager {
     // MARK: - Model Cache / Storage
 
     /// The app's bundle identifier — the single source of truth for every on-disk path segment the
-    /// app owns. Hard-coded (mirrors `PRODUCT_BUNDLE_IDENTIFIER`) rather than read from `Bundle.main`
-    /// so the path is identical under the test host, which runs in a different bundle. Referenced by
-    /// `appSupportDirectory` and by the uninstall guide's leftover-path list so they can't drift.
+    /// app owns. Hard-coded rather than read from `Bundle.main`, so the path is identical under the
+    /// test host, which runs in a different bundle.
     nonisolated static let bundleIdentifier = "com.speech2text.app"
 
-    /// The app-owned root under Application Support — `~/Library/Application Support/com.speech2text.app`.
-    /// The single home for everything the app writes there: the `models/` cache lives beneath it, and the
-    /// complete-uninstall wipe (`removeAllAppData`) removes this whole folder. `modelCacheDirectory`
-    /// derives from it, so the download path and both cleanup paths can't drift apart.
-    ///
-    /// `create: false`: reading a path shouldn't have the side effect of creating the folder.
-    /// WhisperKit/Hub creates the tree on demand when it actually downloads. The bundle-id segment is
-    /// `bundleIdentifier` (hard-coded there rather than read from `Bundle.main`, so the path is
-    /// identical under the test host).
+    /// The app-owned root under Application Support — the single home for everything the app writes
+    /// there, and what the complete-uninstall wipe removes. `create: false`, because reading a path
+    /// shouldn't have the side effect of creating the folder.
+    /// Why: docs/architecture.md#model-cache-directory
     nonisolated static var appSupportDirectory: URL {
         let appSupport = (try? FileManager.default.url(
             for: .applicationSupportDirectory,
@@ -683,37 +643,19 @@ class TranscriptionManager {
         return appSupport.appendingPathComponent(bundleIdentifier, isDirectory: true)
     }
 
-    /// App-owned directory where WhisperKit models are downloaded. Passed as `downloadBase` when
-    /// constructing WhisperKit (see `startTranscription()`) so models live under Application Support —
-    /// the macOS-sanctioned home for app-managed data — instead of polluting the user's
-    /// `~/Documents/huggingface`. Derives from `appSupportDirectory`, the single source of truth for
-    /// the app's on-disk footprint, so the download path and the cleanup paths can't drift apart.
+    /// App-owned directory where WhisperKit models are downloaded, passed as `downloadBase` so they
+    /// don't land in the user's `~/Documents/huggingface`. Derives from `appSupportDirectory`, so the
+    /// download path and the cleanup paths can't drift apart.
+    /// Why: docs/architecture.md#model-cache-directory
     nonisolated static var modelCacheDirectory: URL {
         appSupportDirectory.appendingPathComponent("models", isDirectory: true)
     }
 
-    /// How long the model download may report no progress before it is treated as wedged (see
-    /// `withStallWatchdog`). Bounds `isProcessing`, which is what a stalled download would
-    /// otherwise pin true for the life of the process.
-    ///
-    /// Half an hour, and **do not tighten it** — the window is not a guess, it is arithmetic.
-    ///
-    /// WhisperKit's Hub downloader reports progress only when it flushes a **10 MB** chunk, so this
-    /// window sets a hard throughput floor of 10 MB per window: ~5.7 KB/s (≈46 kbps) at half an
-    /// hour, but ~17.5 KB/s (≈140 kbps) at ten minutes. A link under the floor is declared stalled
-    /// no matter how healthy it is — and, because Hub's resume state also only advances per flushed
-    /// chunk, every retry restarts from the same boundary, so the model becomes permanently
-    /// undownloadable rather than merely slow. That is the exact inversion of this watchdog's
-    /// purpose ("slow is fine, silent is not"), so the floor has to sit below any link someone
-    /// might plausibly be waiting on: even the 75 MB `tiny` model is a multi-hour download at
-    /// 46 kbps.
-    ///
-    /// Silence isn't only about bandwidth either. The repo file listing and the per-file metadata
-    /// requests that precede each download emit nothing, and neither does the hash verification of
-    /// an already-cached snapshot — sweeps whose duration scales with file count and latency.
-    ///
-    /// The cost of being generous is only how long a genuinely wedged download takes to report.
-    /// Fast failure was never the goal here; a bounded busy flag is.
+    /// How long the model download may report no progress before it is treated as wedged. Bounds
+    /// `isProcessing`, which a stalled download would otherwise pin true for the whole process.
+    // DO NOT tighten this — Hub reports only per 10 MB chunk, so the window is a throughput floor,
+    // and a link below it leaves the model permanently undownloadable rather than merely slow.
+    // Why: docs/concurrency.md#idle-timeout-arithmetic
     nonisolated static let modelDownloadIdleTimeout: Duration = .seconds(1800)
 
     /// How often the watchdog checks for silence. Granularity, not precision — there is no reason
@@ -721,31 +663,19 @@ class TranscriptionManager {
     nonisolated static let modelDownloadPollInterval: Duration = .seconds(5)
 
     /// How long a stalled download is given to actually stop before the failure is reported.
-    ///
-    /// Generous on purpose. Both recoveries the error message invites — retry, or delete the
-    /// downloaded models — write to the same snapshot directory an orphaned downloader may still
-    /// be writing to, and this is the window that makes that overlap unlikely rather than likely:
-    /// the user cannot read the message, open Settings and click Delete inside it. Thirty seconds
-    /// is invisible next to the half-hour stall that preceded it.
-    ///
-    /// It is a shrunk window, not a lock. The alternative — refusing deletes while an orphan is
-    /// unaccounted for — would gate the recovery path on a task that by definition might never
-    /// finish, which is the same class of wedge this whole file exists to remove.
+    /// Generous on purpose, and a shrunk window rather than a lock.
+    /// Why: docs/concurrency.md#the-drain
     nonisolated static let modelDownloadDrain: Duration = .seconds(30)
 
-    /// Hard ceiling on `WhisperKit.loadModels()`. Not a stall window — that phase reports nothing
-    /// to watch — so it has to clear the slowest legitimate case by a wide margin: a first-ever
-    /// Core ML specialization of the largest model on the oldest supported chip, minutes rather
-    /// than tens of minutes. Half an hour is far past that, which is the point: it never fires on
-    /// slow hardware, and it still guarantees `.loadingModel` ends. It exists because that phase
-    /// also fetches the tokenizer from the Hub on first run (see `loadModel(named:)`), so it can
-    /// wedge on the network like the download can.
+    /// Hard ceiling on `WhisperKit.loadModels()` — not a stall window, since that phase reports
+    /// nothing to watch. It exists because that phase also fetches the tokenizer from the Hub on
+    /// first run, so it can wedge on the network.
+    /// Why: docs/concurrency.md#idle-timeout-arithmetic
     nonisolated static let modelLoadCeiling: Duration = .seconds(1800)
 
-    /// Total bytes on disk under `directory` (recursive sum of regular-file allocated
-    /// sizes). Returns 0 when the directory doesn't exist or can't be enumerated.
-    /// `nonisolated static` so the recursive walk runs off the `@MainActor` and is
-    /// unit-testable against a temp directory with no manager instance or network.
+    /// Total bytes on disk under `directory`, or 0 when it doesn't exist or can't be enumerated.
+    /// `nonisolated static` so the walk runs off the main actor and is unit-testable against a
+    /// temp directory.
     nonisolated static func cacheSize(of directory: URL) -> Int64 {
         let keys: Set<URLResourceKey> = [
             .isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
@@ -770,13 +700,10 @@ class TranscriptionManager {
         return total
     }
 
-    /// Remove `directory` and report whether it was *fully* removed: `true` when the directory
-    /// existed and `removeItem` succeeded outright, `false` when it was already absent or removal
-    /// failed. Best-effort — never throws. This boolean cannot distinguish "nothing was there" from
-    /// "children were unlinked but the final node removal failed" (`removeItem` recurses depth-first,
-    /// so a late failure can leave weight files already gone yet return `false`); callers that need
-    /// to know whether the tree was *touched* must check existence separately rather than relying on
-    /// this. `nonisolated static` for the same off-actor / testability reasons as `cacheSize(of:)`.
+    /// Remove `directory` and report whether it was *fully* removed. Best-effort — never throws.
+    /// The boolean cannot distinguish "nothing was there" from a depth-first partial removal, so
+    /// callers needing to know whether the tree was *touched* must check existence separately.
+    /// Why: docs/concurrency.md#the-removal-contract
     @discardableResult
     nonisolated static func deleteCache(at directory: URL) -> Bool {
         do {
@@ -787,35 +714,20 @@ class TranscriptionManager {
         }
     }
 
-    /// Bytes currently occupied by the downloaded model cache. `nonisolated` so the
-    /// synchronous `cacheSize` walk runs off the @MainActor: under SE-0338 a nonisolated
-    /// async member executes on the cooperative pool, not the caller's actor. It stays in
-    /// the caller's structured task tree, so a superseded refresh cancelling its task
-    /// propagates into `cacheSize`'s `Task.isCancelled` loop and aborts the walk.
+    /// Bytes currently occupied by the downloaded model cache. `nonisolated` so the synchronous
+    /// walk runs off the main actor while staying in the caller's task tree, so cancellation
+    /// still reaches it.
+    /// Why: docs/concurrency.md#se-0338-and-the-actor-hops
     nonisolated func currentCacheSize() async -> Int64 {
         Self.cacheSize(of: Self.modelCacheDirectory)
     }
 
-    /// Shared machinery for the two destructive removals (`deleteAllModels`, `removeAllAppData`).
-    /// Refuses (returns `nil`, nothing touched) while a transcription is in flight — removing files
-    /// out from under a live `transcribe(...)` would corrupt the run — or while another removal is
-    /// already going. Marks the busy-state (`deletion`) **synchronously** before the first
-    /// suspension, so a transcription started concurrently (also on the main actor) sees
-    /// `canTranscribe == false` and can't begin reading/writing the directory while it is being
-    /// removed; because `deletion` is independent of `status`, a concurrent `clearFiles()`
-    /// (→ `.idle`) can't drop the guard mid-removal. The blocking `removeItem` runs to completion
-    /// off the @MainActor via `Task.detached` — a half-removed tree is worse than a finished one,
-    /// and `removeItem` isn't cancellation-aware — capturing existence in the same hop. The
-    /// in-memory engine is dropped whenever the directory **existed** before the attempt (not only
-    /// on full success): a partial removal (children unlinked but the final node removal failed) can
-    /// still have deleted the weight files, leaving a loaded engine pointing at missing files, which
-    /// would let the next `startTranscription()` take the "already loaded" fast path against a gutted
-    /// cache. Only a genuine no-op (directory already absent) leaves a loaded engine alone. `status`
-    /// is deliberately left untouched: a removal is orthogonal, owned by `deletion`. Returns whether
-    /// the directory was *fully* removed — so Settings re-walks and surfaces residual bytes on a
-    /// partial failure rather than publishing 0 — or `nil` when the guard refused and nothing was
-    /// touched (distinct from `false`, a real attempt that didn't fully remove). `kind` selects the
-    /// status message shown for the duration.
+    /// Shared machinery for the two destructive removals. Returns `nil` when the guard refused and
+    /// nothing was touched, `false` for a real attempt that didn't fully remove, `true` for a full
+    /// removal. `kind` selects the status message shown for the duration.
+    // MUST set `deletion` synchronously before the first suspension, or a concurrent transcription
+    // can start against the directory being removed.
+    // Why: docs/concurrency.md#the-removal-contract
     private func wipeDirectory(_ directory: URL, kind: DeletionKind) async -> Bool? {
         guard !isProcessing, deletion == nil else { return nil }
         deletion = kind
@@ -843,24 +755,12 @@ class TranscriptionManager {
         await wipeDirectory(directory, kind: .models) ?? false
     }
 
-    /// Complete-uninstall wipe: remove the **entire** app-owned Application Support folder
-    /// (`appSupportDirectory`, which contains `models/` and any future app data) AND clear the
-    /// persisted settings, returning whether the folder was fully removed. This is the in-app half of
-    /// a graceful uninstall — macOS has no uninstaller hook and the app isn't sandboxed, so nothing is
-    /// reaped when it's trashed. Wider than `deleteAllModels` (which targets only `models/`); both
-    /// route the file removal through `wipeDirectory`.
-    ///
-    /// Settings are cleared through the injected `UserDefaults` (`removeObject`), NOT by deleting the
-    /// `.plist` file: writes are mediated by `cfprefsd`, which would just re-materialize the file from
-    /// its in-memory cache after a raw delete. Using the injected store also keeps this hermetic under
-    /// the app-hosted test process (never touching the developer's real `.standard` domain).
-    /// `restoreDefaults()` is deliberately NOT called afterward — its `didSet` writers would
-    /// immediately re-persist the keys just cleared. In-memory values are left as they are; a relaunch
-    /// loads the code defaults from the now-empty store. The settings clear runs after `wipeDirectory`
-    /// returns and is synchronous (no `await` before it), so it can't interleave with a concurrent
-    /// transcription; it still runs on a no-op removal (folder already absent) because settings live
-    /// independently of the folder. `appSupport` is injectable so the removal can be unit-tested
-    /// against a temp dir instead of the real folder.
+    /// Complete-uninstall wipe: remove the entire app-owned Application Support folder AND clear
+    /// the persisted settings, returning whether the folder was fully removed. `appSupport` is
+    /// injectable so the removal can be unit-tested against a temp dir.
+    // DO NOT clear settings by deleting the .plist, and DO NOT call `restoreDefaults()` after —
+    // cfprefsd re-materializes the file, and the didSet writers would re-persist what was cleared.
+    // Why: docs/concurrency.md#remove-all-app-data
     @discardableResult
     func removeAllAppData(appSupport: URL = TranscriptionManager.appSupportDirectory) async -> Bool {
         // `nil` means the guard refused (mid-transcription/mid-removal) — leave settings intact.
@@ -874,22 +774,11 @@ class TranscriptionManager {
 }
 
 extension TranscriptionManager {
-    /// The launch argument XCUITest passes to mark a UI-test run.
-    ///
-    /// Deliberately **outside** the `#if DEBUG` below. Both seam functions there are compiled out of
-    /// Release, but `SparkleUpdaterModel.shouldStartUpdater` reads this same sentinel
-    /// unconditionally — that check is reachable *only* in Release (a Debug build is refused a line
-    /// earlier), so a Debug-only constant would not compile for its one real caller.
-    ///
-    /// One half of a two-target contract: `Speech2TextUITests` is a separate process that links no
-    /// app symbols, so `launchApp()` hardcodes the same string with nothing in the compiler tying
-    /// the two together. Renaming the *identifier* is safe — that is an ordinary compiler-checked
-    /// refactor. Changing the *value* is what silently breaks the seam and the updater gate on a
-    /// UI-test launch, and it obliges an edit to that file too.
-    /// `uiTestingLaunchArgumentIsTheCrossTargetContract` catches that from this side only: it pins
-    /// this constant to the literal XCUITest sends, so an app-side value change fails the unit
-    /// suite. The reverse — editing the literal over there — is caught by nothing but running the
-    /// UI tests.
+    /// The launch argument XCUITest passes to mark a UI-test run. Deliberately outside the
+    /// `#if DEBUG` below, because `SparkleUpdaterModel.shouldStartUpdater` reads it in Release.
+    // MUST equal the literal in `Speech2TextUITests.launchApp()` — nothing in the compiler ties
+    // them, and only a UI-test run catches a mismatch.
+    // Why: docs/testing.md#the-cross-target-contract
     nonisolated static let uiTestingLaunchArgument = "-uiTesting"
 }
 
@@ -933,20 +822,13 @@ extension TranscriptionManager {
             addFiles(urls)
         }
 
-        // Stub a finished transcription so the result UI (editor, Copy, Export)
-        // is reachable without running WhisperKit. Guard against an empty value
-        // (mirroring the preload guard above) so a blank stub doesn't flip the
-        // status to .completed with nothing to show.
-        //
-        // This jumps straight to the terminal `.completed` state, deliberately
-        // skipping most of the side effects the real `startTranscription()` path runs
-        // en route (setting `whisperKit`, progress ticks, etc.). It does mirror one
-        // `.completed` invariant: clearing `skippedFileNames`, so a mixed preload
-        // (supported + unsupported extensions) can't leave the result UI rendered
-        // alongside a stale warning row — a state unreachable in the real app. If a
-        // future change adds another `.completed` invariant, audit this shortcut too.
+        // Stub a finished transcription so the result UI is reachable without WhisperKit. Jumps
+        // straight to `.completed`, skipping most of the real path's side effects but mirroring one
+        // invariant: clearing `skippedFileNames`.
+        // MUST be audited if another `.completed` invariant is ever added.
+        // Why: docs/testing.md#the-seam-itself
         if let stub = environment["UITEST_STUB_RESULT"], !stub.isEmpty {
-            skippedFileNames = []   // match startTranscription()'s .completed invariant (see :213)
+            skippedFileNames = []   // mirrors startTranscription()'s .completed invariant
             transcriptionResult = stub
             status = .completed
         }

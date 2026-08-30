@@ -31,8 +31,10 @@ host shares that domain with the developer's real installed app. Unit tests run 
 here (test host = the app, so `Speech2TextApp.init` executes on every test run). Same hermetic-DI
 convention as the manager's injectable `UserDefaults`.
 
-`SparkleUpdating` is the slice of `SPUUpdater` the model actually drives: the settable auto-check
-preference, a manual check, and the two KVO streams it mirrors. It exists so the model's **live**
+`SparkleUpdating` is the slice of `SPUUpdater` the model actually drives: a **readable**
+`canCheckForUpdates` (readable, not merely observable, so the model can seed from it and re-read the
+live value after hopping), the settable auto-check preference, a manual check, and the two KVO
+streams it mirrors. It exists so the model's **live**
 branch — the Sparkle seed, both observations, both write paths — can run under test with **no
 Sparkle object in the process at all**.
 
@@ -126,7 +128,12 @@ install until `isProcessing`/`isRemovingData` clears.
 
 ### Why not refuse the check
 
-Refusing the check (`updater(_:mayPerform:)`) looks tempting and is worse on both counts:
+Refusing the check (`updater(_:mayPerform:)`) looks tempting and is worse on both counts.
+
+(That Swift name looks wrong and isn't: the ObjC selector is
+`updater:mayPerformUpdateCheck:error:`, but the importer drops `error:` into `throws` and
+omit-needless-words shortens `mayPerformUpdateCheck:` to `mayPerform:` because the argument is
+already an `SPUUpdateCheck`. Verified by type-check — don't "correct" it.)
 
 1. Sparkle records a refused check as a **completed** one — `abortUpdateDriver` calls
    `updateLastUpdateCheckDate` and reschedules with `usingCurrentDate:NO` — so a user who happens
@@ -190,8 +197,9 @@ The pin is of course as typo-able as the label was, which is why
 `postponeHookSelectorIsWired` asserts the selector itself — see
 [testing.md#selector-tripwire](testing.md#selector-tripwire).
 
-`UpdaterDelegate` is internal rather than private (unlike the app-menu command views) so that test
-can construct one. Constructing it is hermetically safe: `init(isBusy:)` takes only a closure and
+`UpdaterDelegate` is internal rather than private — unlike its `AboutMenuCommand`/`HelpMenuCommand`
+siblings, though `CheckForUpdatesCommand` is internal too, for the same testability reason — so that
+test can construct one. Constructing it is hermetically safe: `init(isBusy:)` takes only a closure and
 names no Sparkle type. `mayRelaunchForUpdate` is a pure function of its input, deliberately,
 because the delegate method that consults it takes an `SPUUpdater` and an `SUAppcastItem` — neither
 of which a test may construct.

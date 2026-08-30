@@ -61,10 +61,9 @@ struct AboutView: View {
 
             Divider()
 
-            // Credits for the open-source components that ship inside the app binary (WhisperKit and
-            // its vendored swift-transformers); OpenAI's Whisper is the underlying model. The full
-            // license texts live in THIRD-PARTY-LICENSES.md, which ships inside the app bundle
-            // (Contents/Resources) as well as at the repo root — see project.yml.
+            // Credits for the components that ship inside the app binary. Full license texts live
+            // in THIRD-PARTY-LICENSES.md, which ships inside the bundle too.
+            // Why: docs/build.md#target-layout
             VStack(alignment: .leading, spacing: 4) {
                 Text("Acknowledgements")
                     .font(.subheadline).bold()
@@ -75,9 +74,8 @@ struct AboutView: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            // Without this the longest credit (swift-transformers) exceeds the panel's fixed 380pt
-            // width and truncates with "…"; let it wrap to a second line instead, matching how the
-            // description paragraph above handles its own width.
+            // DO NOT drop this — the longest credit exceeds the panel's fixed 380pt width.
+            // Why: docs/architecture.md#the-about-panel
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -85,14 +83,10 @@ struct AboutView: View {
         .frame(width: 380)
     }
 
-    /// "Version X (Y)" read once from the bundle's Info.plist, which now maps
-    /// `CFBundleShortVersionString`/`CFBundleVersion` from the `MARKETING_VERSION`/
-    /// `CURRENT_PROJECT_VERSION` build settings — so this shows the real shipped version instead of a
-    /// duplicated literal, and can't drift from `project.yml`. Computed a single time for the process
-    /// (the bundle version is fixed for the process lifetime, so a `static let` avoids re-reading the
-    /// Info.plist on every `body` render — mirrors how `HelpView` hoists its derived strings). `nil`
-    /// when the bundle carries no version (only under a stripped test host), so the line is simply
-    /// omitted there rather than showing a placeholder.
+    /// The version line, read once from the bundle's Info.plist rather than duplicated as a
+    /// literal, so it can't drift from `project.yml`. Collapses to "Version X" when build == short,
+    /// which lockstep guarantees; `nil` under a stripped test host, so the line is omitted.
+    /// Why: docs/architecture.md#the-about-panel
     private static let versionString: String? = {
         let info = Bundle.main.infoDictionary
         guard let short = info?["CFBundleShortVersionString"] as? String, !short.isEmpty else {

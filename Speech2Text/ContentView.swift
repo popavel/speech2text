@@ -3,12 +3,9 @@ import UniformTypeIdentifiers
 @preconcurrency import WhisperKit
 
 struct ContentView: View {
-    /// The app-owned shared `TranscriptionManager`, injected (not owned) by this view.
-    /// `@Bindable` rather than `@State`: the manager's lifetime belongs to `Speech2TextApp`
-    /// (which holds it in `@State` and hands the same instance to both this window and the
-    /// Settings scene). `@Bindable` observes that instance and still exposes the `$manager.…`
-    /// bindings the pickers/editor need, without re-wrapping it in this view's own state —
-    /// so the view can never pin a stale manager if the app later supplies a new one.
+    /// The app-owned shared `TranscriptionManager`, injected rather than owned. `@Bindable` and not
+    /// `@State`, so the view can never pin a stale manager.
+    /// Why: docs/architecture.md#state-flow
     @Bindable var manager: TranscriptionManager
     @State private var isDragTargeted = false
     @State private var showFileImporter = false
@@ -444,15 +441,9 @@ struct ContentView: View {
 
 // MARK: - Language Picker
 
-/// A searchable language picker. The full WhisperKit language set (~100 entries)
-/// is too long for a plain menu, so this presents the current selection as a button
-/// that opens a popover with a search field and a filtered, scrollable list.
-///
-/// `List` + `.searchable(text:)` was considered and rejected: `.searchable()` is only
-/// reliable inside a `NavigationStack`, and in a bare `.popover` it has known rough edges
-/// around search-field placement and content-driven sizing. Hence the hand-rolled
-/// `TextField` + `ScrollView`. Type-to-filter is the navigation model; arrow-key row
-/// cycling is intentionally not reimplemented, but Return selects the top match (`.onSubmit`).
+/// A searchable language picker: the current selection as a button opening a popover with a search
+/// field and a filtered list. `List` + `.searchable(text:)` was considered and rejected.
+/// Why: docs/architecture.md#the-language-picker
 private struct LanguagePicker: View {
     @Binding var selection: TranscriptionLanguage
     @State private var isPresented = false
@@ -498,11 +489,9 @@ private struct LanguagePicker: View {
                     .textFieldStyle(.roundedBorder)
                     .padding(8)
                     .accessibilityIdentifier("languageSearchField")
-                    // Return selects the top match for a real query, so keyboard-only
-                    // users can type-then-Enter without reaching for the mouse. A blank
-                    // query just dismisses — it must NOT select `filtered.first` (which
-                    // is Auto-detect on the unfiltered list), or Return on an empty field
-                    // would silently clobber the current selection.
+                    // DO NOT let a blank query select `filtered.first` — that is Auto-detect on
+                    // the unfiltered list, so Return on an empty field would clobber the selection.
+                    // Why: docs/architecture.md#the-language-picker
                     .onSubmit {
                         if let target = TranscriptionLanguage.submitSelection(for: searchText) {
                             select(target)
@@ -742,22 +731,11 @@ struct SettingsView: View {
     }
 
     /// Run a destructive removal and reconcile the displayed cache size — shared by the
-    /// Delete-Downloaded-Models and Remove-All-App-Data buttons. `directory` is the tree the removal
-    /// targets, used afterwards only to tell a genuine failure from a harmless no-op.
-    ///
-    /// Cancels any in-flight display walk before the removal, so a GB-scale enumerator doesn't race
-    /// `removeItem` for the same tree; a walk can't *start* mid-removal because `refreshSize()` bails
-    /// while `isRemovingData` is set, and the manager sets that busy-state synchronously before the
-    /// removal's first suspension. **`removal` must be `@MainActor`** for that to hold: a nonisolated
-    /// `() async -> Bool` would hop off the main actor at `await removal()` (SE-0338) *before*
-    /// `deleteAllModels`/`removeAllAppData` runs, leaving `deletion` nil across a suspension that a
-    /// refocus (`controlActiveState` → `.key` on dialog dismissal) could slip a fresh walk into. With
-    /// `@MainActor` the call is same-actor and runs straight into `wipeDirectory`, which sets
-    /// `deletion` before it suspends. The cancelled walk's own `isMeasuring = false` may not have
-    /// landed yet, so clear it here too — otherwise the no-op branch's `refreshSize()` below would be
-    /// blocked by the coalescing guard. On success the tree is gone (size 0), set directly rather than
-    /// re-walking an emptied tree; otherwise re-walk so residual bytes aren't misreported as "None",
-    /// and surface an error only for a genuine failure — see the busy-flag gate below.
+    /// Delete-Downloaded-Models and Remove-All-App-Data buttons. `directory` is used afterwards only
+    /// to tell a genuine failure from a harmless no-op.
+    // `removal` MUST stay `@MainActor` — a nonisolated `() async -> Bool` would hop off the actor
+    // before the wipe runs, leaving `deletion` nil across a suspension a refocus could exploit.
+    // Why: docs/concurrency.md#se-0338-and-the-actor-hops
     private func performRemoval(
         of directory: URL,
         _ removal: @escaping @MainActor () async -> Bool
@@ -770,13 +748,9 @@ struct SettingsView: View {
                 cacheBytes = 0
             } else {
                 refreshSize()
-                // A `false` result can mean two very different things: a genuine failure (a real
-                // attempt that left the target on disk), or the manager *refusing* the removal
-                // because a transcription or another removal is in flight — which leaves everything
-                // intact by design and is NOT an error. Only a real attempt clears the busy flags
-                // by the time it returns, so if either is still set the call was refused; suppress
-                // the alert then. This runs synchronously right after `removal()` on the main actor,
-                // so the flags reflect the exact post-call state with no interleaving.
+                // A `false` result is ambiguous — a genuine failure, or a refusal that left
+                // everything intact by design. Only a real attempt clears the busy flags.
+                // Why: docs/concurrency.md#se-0338-and-the-actor-hops
                 if !manager.isProcessing, !manager.isRemovingData,
                    FileManager.default.fileExists(atPath: directory.path) {
                     showRemovalError = true
@@ -785,31 +759,12 @@ struct SettingsView: View {
         }
     }
 
-    /// Recompute the cache size off the main actor.
-    ///
-    /// Coalesced via `isMeasuring`: a call while a walk is already running is a no-op, so the
-    /// `.task` + `.onChange(controlActiveState)` double-fire on first open (and rapid refocus)
-    /// collapses to a single walk. A genuine refocus after this one finishes still re-measures,
-    /// because the flag is clear by then. The delete path clears `isMeasuring` where it cancels
-    /// the walk, so its post-delete re-measure isn't blocked.
-    ///
-    /// Bails while a delete is in flight: a walk begun against a tree being removed could
-    /// read a partial size and land after the delete publishes `0`. `deleteAllModels` sets
-    /// `isRemovingData` synchronously before its first suspension and clears it only after,
-    /// so this guard covers the whole delete — no walk can start mid-delete.
-    ///
-    /// Deliberately does NOT blank `cacheBytes`: the first measure already starts from `nil`
-    /// (showing "Calculating…"), while a refresh that already has a value keeps the prior
-    /// figure on screen until the new one lands — no "Calculating…" flash on every refocus.
-    /// `.utility` priority keeps the background size calc off the foreground's back.
-    ///
-    /// Ownership via `measureGeneration`: each walk captures the generation it was launched
-    /// under and only mutates the shared `isMeasuring`/`cacheBytes` while it is still the
-    /// current walk. A superseded walk — a newer `refreshSize()` has since run, or the delete
-    /// path cancelled this one and spawned a fresh walk — bails without clearing `isMeasuring`
-    /// (which now belongs to that newer walk) or overwriting `cacheBytes`. Without this a
-    /// late-resuming cancelled walk could clear the coalescing flag mid-walk, letting a later
-    /// refocus spawn a second concurrent, untracked walk.
+    /// Recompute the cache size off the main actor. Coalesced via `isMeasuring`, bails while a
+    /// delete is in flight, and deliberately does not blank `cacheBytes` (so there is no
+    /// "Calculating…" flash on every refocus).
+    // DO NOT drop the `measureGeneration` ownership check — without it a late-resuming cancelled
+    // walk clears the coalescing flag mid-walk, letting a refocus spawn a second untracked walk.
+    // Why: docs/concurrency.md#cache-walk-ownership
     private func refreshSize() {
         guard !manager.isRemovingData, !isMeasuring else { return }
         isMeasuring = true

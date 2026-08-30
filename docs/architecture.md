@@ -228,15 +228,16 @@ Static content — it takes no `TranscriptionManager`, unlike `ContentView`/`Set
 identity, version, author, license, source link, and the open-source acknowledgements for what
 actually ships in the binary.
 
-`versionString` is `"Version X (Y)"` read **once** from the bundle's `Info.plist`, which maps
+`versionString` is read **once** from the bundle's `Info.plist`, which maps
 `CFBundleShortVersionString`/`CFBundleVersion` from the `MARKETING_VERSION`/
 `CURRENT_PROJECT_VERSION` build settings — so it shows the real shipped version instead of a
 duplicated literal, and can't drift from `project.yml`. It is a `static let` because the bundle
 version is fixed for the process lifetime, avoiding an `Info.plist` read on every `body` render
 (mirroring how `HelpView` hoists its derived strings). It is `nil` when the bundle carries no
 version — only under a stripped test host — so the line is simply omitted rather than showing a
-placeholder. See [distribution.md#version-lockstep](distribution.md#version-lockstep) for why build
-and short version are always equal, and
+placeholder. It renders `"Version X (Y)"` only when the build differs from the short version;
+because [version lockstep](distribution.md#version-lockstep) keeps them equal, the shipped panel
+always shows `"Version X.Y.Z"`. See that section for why they are always equal, and
 [testing.md#the-about-panel-version-gap](testing.md#the-about-panel-version-gap) for why no test
 asserts it.
 
@@ -246,5 +247,5 @@ The full license texts live in `THIRD-PARTY-LICENSES.md`, which ships inside the
 as at the repo root — see [build.md#target-layout](build.md#target-layout).
 
 `.fixedSize(horizontal: false, vertical: true)` on the credits block is load-bearing: without it the
-longest credit (swift-transformers) exceeds the panel's fixed 380 pt width and truncates with "…"
-instead of wrapping to a second line.
+longest credit line — currently Sparkle's — exceeds the panel's fixed 380 pt width
+and truncates with "…" instead of wrapping to a second line.

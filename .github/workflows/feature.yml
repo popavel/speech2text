@@ -2,14 +2,12 @@ name: Feature
 
 # When should this workflow run?
 #
-# Push-only — deliberately NO `pull_request:` trigger. A push-event check attaches to
-# the branch head SHA, which is also the head commit of any feature/chore -> main PR,
-# so the push run's checks already satisfy the `main protection` ruleset's required
-# contexts on that PR (verified: the gate worked this way before a pull_request trigger
-# was briefly added). Re-adding `pull_request:` fires a SECOND run for the same commit;
-# the concurrency group below then cancels one of the pair, leaving a `cancelled`
-# required check on the PR head that blocks the merge. main.yml and release.yml are
-# push-only for the same reason.
+# Push-only — deliberately NO `pull_request:` trigger. A push-event check attaches to the branch
+# head SHA, which is also the head commit of a feature/chore -> main PR, so this run already
+# satisfies the `main protection` ruleset's required contexts there.
+# DO NOT add `pull_request:` — it doubles the CI minutes for one commit, and re-created a
+# merge-blocking `cancelled` required check the last time the concurrency key was changed with it.
+# Why: docs/automation.md#push-only-deliberately-no-pull_request-trigger
 on:
   push:
     branches:

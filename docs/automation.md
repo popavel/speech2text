@@ -31,15 +31,30 @@ Each of the three also calls `integration-whisperkit` and `ui-tests`, both with
 
 ### Push-only, deliberately no `pull_request:` trigger
 
-A push-event check attaches to the branch head SHA, which is also the head commit of any
-feature/chore → main PR, so the push run's checks already satisfy the `main protection` ruleset's
-required contexts on that PR. (Verified: the gate worked this way before a `pull_request` trigger
-was briefly added.)
+A push-event check attaches to the branch head SHA, which is also the head commit of a
+`feature/**` or `chore/**` → main PR, so `feature.yml`'s push run already satisfies the
+`main protection` ruleset's required contexts on that PR.
 
-**Re-adding `pull_request:` fires a second run for the same commit**; the concurrency group then
-cancels one of the pair, leaving a `cancelled` required check on the PR head that **blocks the
-merge**. All three pipelines are push-only for this reason. `main.yml` and `release.yml` keep the
-disabled `pull_request:` block commented with a re-enable note.
+**Re-adding `pull_request:` fires a second run for the same commit.** Today's concurrency groups
+are keyed on `${{ github.workflow }}-${{ github.ref }}`, and `github.ref` differs between the two
+events (`refs/heads/…` vs `refs/pull/N/merge`), so the pair would *not* collide — it would simply
+burn double the CI minutes.
+
+The merge-blocking failure this guards against is historical but worth knowing, because it is what
+a naive re-enable would recreate: in `1845f46` the group was keyed on
+`github.event.pull_request.head.ref || github.ref_name`, which **did** put both runs in one group,
+so one was cancelled and left a `cancelled` required check on the PR head that blocked the merge.
+`55db068` reverted the key *and* made the workflow push-only. Re-adding the trigger without also
+re-checking the concurrency key walks straight back into it.
+
+All three pipelines are push-only for this reason. `main.yml`/`release.yml` keep the disabled
+`pull_request:` block commented with a tripwire that points at the concurrency key rather than
+forbidding the trigger outright — enabling it on `main.yml` is in fact the natural fix for the gap
+below, and what must not be repeated is enabling it *without* re-checking the key.
+
+**A gap worth naming:** coverage comes from `feature.yml`, which triggers only on `feature/**` and
+`chore/**`. A PR into `main` from a branch with any other prefix gets no required-context run at
+all — `main.yml` fires only on pushes *to* `main`, i.e. after the merge.
 
 ---
 
@@ -50,9 +65,10 @@ disabled `pull_request:` block commented with a re-enable note.
 - **`integration-whisperkit.yml`** — runs the end-to-end WhisperKit suite (downloads the tiny model
   and actually transcribes), not just a compile. Gated by a `TEST_RUNNER_`-prefixed environment
   variable — see [testing.md#integration-gating](testing.md#integration-gating).
-- **`ui-tests.yml`** — reusable job running the XCUITest suite against the real app. **Unlike every
-  other job it runs signed** (no `CODE_SIGNING_ALLOWED=NO` — an unsigned test runner is killed
-  before it can attach). Called by feature/main/release with `needs: build-and-test`, and still
+- **`ui-tests.yml`** — reusable job running the XCUITest suite against the real app. **The only
+  *test* job that runs signed** (no `CODE_SIGNING_ALLOWED=NO` — an unsigned test runner is killed
+  before it can attach); `publish-release.yml` also builds signed, but with a Developer ID identity
+  rather than Xcode's default ad-hoc signature. Called by feature/main/release with `needs: build-and-test`, and still
   `workflow_dispatch`-able for manual runs.
 
   This was held back as manual-only until a green dispatch run proved XCUITest works on `macos-26`;
@@ -156,8 +172,8 @@ commit guard doesn't intercept it. `xcodegen` runs *after* change detection.
 Runs weekly (Mondays 06:00 UTC). Dependencies are pinned with `from:` constraints, which are
 up-to-next-major, so any of them can ship a newer release *within* its pinned major that breaks the
 build at any time. The job drops `Package.resolved` and re-resolves the **whole** SwiftPM graph
-(WhisperKit, ViewInspector, and transitives like swift-argument-parser) to the latest release each
-`from:` allows, builds + tests, and either opens a PR listing which pins moved (still green) or
+(WhisperKit, Sparkle, ViewInspector, and transitives like swift-argument-parser) to the latest
+release each `from:` allows, builds + tests, and either opens a PR listing which pins moved (still green) or
 files an issue mentioning `@claude` (broken → needs adapting).
 
 **`from:` never crosses a major boundary**, so a new major of any dependency is **not** picked up

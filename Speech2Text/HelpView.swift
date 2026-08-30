@@ -56,18 +56,11 @@ enum HelpTopic: String, CaseIterable, Identifiable {
 /// sidebar lists the `HelpTopic`s and whose detail renders the selected one. Replaces the former
 /// standalone "Uninstalling Speech2Text…" window — uninstalling is now this book's final topic.
 ///
-/// Facts that can drift from the code are derived from `TranscriptionManager`'s canonical `static`
-/// declarations and are covered by `HelpViewTests`: supported formats, model display names and the
-/// default model, the default language name, task labels, the storage/uninstall paths, the
-/// batch-run header, and the language count. The rest of the copy is illustrative prose that is NOT
-/// derived, so a rebind or a control
-/// rename has to be mirrored here by hand. That non-derived surface is every keyboard shortcut
-/// (⌘O/⌘⏎/⌘,) and every ContentView control label named in the text — e.g. the Settings labels
-/// ("Downloaded models", "Delete Downloaded Models", "Remove All App Data", "Restore Default
-/// Settings"), the main-window controls ("Browse Files", "Clear All", "Task", "Advanced",
-/// "Temperature", "Transcribe", "Copy", "Export .txt") and the "Storage" section.
-/// Renaming any of these in `ContentView` builds green and passes tests while leaving the help book
-/// misdescribing the UI.
+/// Facts that can drift from the code are DERIVED from `TranscriptionManager`'s canonical `static`
+/// declarations and covered by `HelpViewTests`. The rest — every keyboard shortcut and every
+/// control label named in the prose — is not derived, so renaming one in `ContentView` builds
+/// green and passes tests while leaving the help book misdescribing the UI.
+/// Why: docs/architecture.md#the-help-books-derived-facts
 struct HelpView: View {
     /// The help book's title — one source shared by the `Window` scene, the Help-menu item (both in
     /// `Speech2TextApp`), and this view's `navigationTitle`, so they can't disagree. The XCUITest

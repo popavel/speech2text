@@ -315,6 +315,14 @@ is called from `Speech2TextApp.init()`. The seam is compiled out of Release.
 **UI tests never tap Transcribe** — it calls `startTranscription()`, which loads WhisperKit and
 downloads a model.
 
+`UITEST_STUB_RESULT` jumps straight to the terminal `.completed` state, deliberately skipping most
+of the side effects the real path runs en route (setting `whisperKit`, progress ticks). It mirrors
+exactly one `.completed` invariant: **clearing `skippedFileNames`.** Without that, a mixed preload
+— some supported extensions, some not — would leave the result UI rendered alongside a stale
+warning row, a state unreachable in the real app. Both the preload and the stub guard against an
+empty value, so a blank stub can't flip the status to `.completed` with nothing to show. **If a
+future change adds another `.completed` invariant, audit this shortcut too.**
+
 Under `-uiTesting` the app also persists settings to an isolated, volatile store instead of
 `.standard`, so UI tests are deterministic and can't clobber the developer's saved settings.
 

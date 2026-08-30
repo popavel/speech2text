@@ -256,7 +256,8 @@ Things that keep this sane — don't undo them:
   `1.0.0` and above are reserved for the first genuinely user-facing release.**
 - **Sparkle version skew is impossible by construction**: `publish-release.yml` runs
   `generate_appcast` straight out of the resolved SwiftPM package store
-  (`DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/`) — Sparkle ships its CLI tools
+  (located under `DerivedData/SourcePackages/artifacts/` with a `find`, not a hardcoded path) —
+  Sparkle ships its CLI tools
   inside the same zip the framework comes from, which SwiftPM fetches for a
   `binaryTarget(checksum:)` and rejects on a SHA-256 mismatch. So the tool that receives the EdDSA
   private key is the exact artifact the app embeds, integrity-checked. **Never re-download it** —

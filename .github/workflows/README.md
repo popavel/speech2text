@@ -11,8 +11,9 @@ prose on how the automation fits together, see the **Automation helpers** sectio
 
 - [`build-and-test.yml`](build-and-test.yml) — reusable (`workflow_call`) job: build + test
   (Debug, signing off) on `macos-26`, pinned to Xcode 26.4.1.
-- [`feature.yml`](feature.yml) — calls `build-and-test` on `feature/**` branches.
-- [`main.yml`](main.yml) — calls `build-and-test` on pushes / PRs to `main`.
+- [`feature.yml`](feature.yml) — calls `build-and-test` on `feature/**` and `chore/**` branches.
+- [`main.yml`](main.yml) — calls `build-and-test` on pushes to `main`. Push-only, deliberately —
+  see [docs/automation.md](../../docs/automation.md#push-only-deliberately-no-pull_request-trigger).
 - [`release.yml`](release.yml) — calls `build-and-test` on `release/**` branches. Despite the
   name it publishes nothing; the distribution pipeline is `publish-release.yml` below.
 
@@ -52,9 +53,9 @@ Each of the three pipelines also calls `integration-whisperkit` and `ui-tests` (
 ### UI tests
 
 - [`ui-tests.yml`](ui-tests.yml) — reusable (`workflow_call`) job: runs the XCUITest UI suite,
-  which launches the real app and drives it via accessibility identifiers. Unlike every other job
-  it runs **signed** (no `CODE_SIGNING_ALLOWED=NO` — an unsigned runner is killed before it can
-  attach). Called by feature/main/release with `needs: build-and-test`, and still dispatchable
+  which launches the real app and drives it via accessibility identifiers. The only **test** job
+  that runs signed (no `CODE_SIGNING_ALLOWED=NO` — an unsigned runner is killed before it can
+  attach); the publish pipeline also builds signed, with a Developer ID identity. Called by feature/main/release with `needs: build-and-test`, and still dispatchable
   manually from the Actions tab.
 
 ### Claude automation

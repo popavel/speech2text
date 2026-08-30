@@ -5,8 +5,9 @@ on:
   push:
     branches: [main]   # runs on pushes to the main branch
 
-  # Disabled for now to save CI minutes. Re-enable by uncommenting these
-  # two lines (they sit at the `on:` level, so they restore cleanly).
+  # MUST re-check the concurrency key before enabling this: a head-ref-keyed group puts the push
+  # and PR runs for one commit in the same group, cancelling one and blocking the merge.
+  # Why: docs/automation.md#push-only-deliberately-no-pull_request-trigger
   # pull_request:
   #   branches: [main]   # runs on pull requests targeting the main branch
 

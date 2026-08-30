@@ -4,22 +4,19 @@ import SwiftUI
 // Binary ObjC framework without full Sendable annotations — same treatment as WhisperKit.
 @preconcurrency import Sparkle
 
-// The in-app update mechanism. Speech2Text is distributed directly (Developer ID-signed and
-// notarized, from GitHub Releases and the project website) and self-updates via Sparkle against
-// the appcast at `SUFeedURL` in Info.plist. See AGENTS.md "Distribution & updates".
+// The in-app update mechanism: direct distribution, self-updating via Sparkle against the appcast
+// at `SUFeedURL` in Info.plist.
+// Why: docs/distribution.md#the-seam
 
-/// What the views need from an updater. Views depend on this protocol, not on Sparkle, so unit
-/// tests inject a `FakeUpdater` — a real `SPUUpdater` persists its preferences straight into the
-/// app's `.standard` UserDefaults domain (it has no injectable store), which the in-process test
-/// host shares with the developer's real app. Same hermetic-DI convention as the manager's
-/// injectable `UserDefaults`.
+/// What the views need from an updater. Views depend on this protocol, never on Sparkle, so unit
+/// tests can inject a `FakeUpdater`.
+/// Why: docs/distribution.md#the-seam
 @MainActor
 protocol UpdaterModel: AnyObject, Observable {
-    /// Whether this model drives a real updater at all. False in gated processes (any Debug
-    /// build, a test host, `-uiTesting`), where the update controls would otherwise look live but
-    /// do nothing — writes are kept in memory and re-seeded from Info.plist on the next launch.
-    /// Constant for the model's lifetime, unlike `canCheckForUpdates`, which also goes false
-    /// mid-check.
+    /// Whether this model drives a real updater at all — false in gated processes (any Debug
+    /// build, a test host, `-uiTesting`). Constant for the model's lifetime, unlike
+    /// `canCheckForUpdates`, which also goes false mid-check.
+    /// Why: docs/distribution.md#the-launch-gate
     var isActive: Bool { get }
 
     /// Whether a manual check can start now (false while the updater is off or mid-session).
@@ -31,28 +28,13 @@ protocol UpdaterModel: AnyObject, Observable {
     func checkForUpdates()
 }
 
-/// The slice of `SPUUpdater` that `SparkleUpdaterModel` actually drives: the settable auto-check
-/// preference, a manual check, and the two KVO streams it mirrors. Exists so the model's LIVE
-/// branch — the Sparkle seed, both observations, both write paths — can run under test against a
-/// fake with NO Sparkle object in the process. That matters because a real `SPUUpdater`, started
-/// or not, binds an `SUHost` to the app's shared `.standard` defaults domain, which the in-process
-/// test host shares with the developer's real app (see `controller` below and AGENTS.md).
-///
-/// The observations are VENDED by the conformer rather than registered by the model, because
-/// `observe(_:options:changeHandler:)` needs a concrete `Self` and a `KeyPath<Self, Value>` over an
-/// `@objc dynamic` property — neither of which an existential can express. Each conformer registers
-/// KVO on its own storage and hands back the `NSKeyValueObservation`, whose lifetime the model owns.
-///
-/// `@MainActor` because Sparkle annotates `SPUUpdater` as `NS_SWIFT_UI_ACTOR`, so a nonisolated
-/// protocol cannot be conformed to it ("conformance crosses into main actor-isolated code"). That
-/// matches the model, which is `@MainActor` too. The handlers are `@Sendable` because Foundation's
-/// KVO overlay declares its `changeHandler` that way; they capture only `[weak self]` on a
-/// `@MainActor` (hence implicitly `Sendable`) class, so the requirement costs nothing.
+/// The slice of `SPUUpdater` that `SparkleUpdaterModel` actually drives, so the model's LIVE branch
+/// can run under test with no Sparkle object in the process at all.
+/// Why: docs/distribution.md#the-seam
 @MainActor
 protocol SparkleUpdating: AnyObject {
-    /// Whether Sparkle can start a check right now. Readable (not just observable) so the model
-    /// can seed from it and re-read the live value after hopping to the main actor, rather than
-    /// applying a possibly-stale value captured in a KVO change payload.
+    /// Whether Sparkle can start a check right now. Readable, not just observable, so the model can
+    /// seed from it and re-read the live value after hopping to the main actor.
     var canCheckForUpdates: Bool { get }
 
     /// Sparkle's persisted "check automatically" preference (`SUEnableAutomaticChecks`).
@@ -61,29 +43,24 @@ protocol SparkleUpdating: AnyObject {
     /// Start a user-initiated check (Sparkle shows its own UI, including errors).
     func checkForUpdates()
 
-    /// KVO over `canCheckForUpdates`. The model neither seeds from this nor reads the change
-    /// payload — it seeds by direct read and re-reads the live value on the main actor (see the
-    /// handler) — so no `options` and no change struct are load-bearing. Symmetric with the
-    /// auto-checks vendor below, deliberately: one delivery shape for both mirrors.
+    /// KVO over `canCheckForUpdates`. Neither `options` nor the change struct is load-bearing —
+    /// the model seeds by direct read and re-reads on arrival. Symmetric with the vendor below.
+    /// Why: docs/distribution.md#kvo-mirrors
     func observeCanCheckForUpdates(
         changeHandler: @escaping @Sendable () -> Void
     ) -> NSKeyValueObservation
 
     /// KVO over `automaticallyChecksForUpdates`. Same shape as the vendor above, for the same
-    /// reason: the model seeds by direct read and re-reads the live value after hopping to the
-    /// main actor, so neither `options` nor the change struct is load-bearing here either.
+    /// reason.
     func observeAutomaticallyChecksForUpdates(
         changeHandler: @escaping @Sendable () -> Void
     ) -> NSKeyValueObservation
 }
 
-/// `SPUUpdater` already satisfies the value half of `SparkleUpdating` — `checkForUpdates()` and the
-/// settable `automaticallyChecksForUpdates` are its own API — so only the two observation vendors
-/// are added here, each a one-line forward to Foundation's KVO overlay over Sparkle's `@objc
-/// dynamic` properties. Kept irreducibly thin ON PURPOSE: this extension is the one piece of the
-/// live path a test cannot execute (it needs a real `SPUUpdater`), so every decision that could be
-/// wrong — which options, what the handler does with the change — lives on the model's side of the
-/// seam instead.
+/// `SPUUpdater` already satisfies the value half of `SparkleUpdating`, so only the two observation
+/// vendors are added here. Kept irreducibly thin on purpose — this is the one piece of the live
+/// path a test cannot execute.
+/// Why: docs/distribution.md#the-seam
 extension SPUUpdater: SparkleUpdating {
     func observeCanCheckForUpdates(
         changeHandler: @escaping @Sendable () -> Void
@@ -98,26 +75,13 @@ extension SPUUpdater: SparkleUpdating {
     }
 }
 
-/// Sparkle's delegate. One job: never relaunch over work in progress. A transcription can run for
-/// minutes and its result lives only in memory (`TranscriptionManager.transcriptionResult`), and a
-/// data wipe mid-`removeItem` would leave a half-deleted cache — so installing an update at either
-/// moment destroys something the user can't get back.
-///
-/// It guards the RELAUNCH, deliberately not the check. Refusing the check
-/// (`updater(_:mayPerform:)`) looks tempting but is worse on both counts: Sparkle records a
-/// refused check as a completed one — `abortUpdateDriver` calls `updateLastUpdateCheckDate` and
-/// reschedules with `usingCurrentDate:NO` — so a user who happens to be transcribing when the
-/// daily check fires has updates pushed a further ~24h out, every time; and it does nothing about
-/// the actual hazard, which is the user accepting an alert that appeared while they were idle and
-/// starting work in the seconds before they click.
-///
-/// Retained by `SparkleUpdaterModel` — `SPUStandardUpdaterController` holds its delegate weakly.
-///
-/// Internal (not private, unlike the app-menu command views in `Speech2TextApp.swift`) so the
-/// selector test can construct one and ask whether the postpone hook is still wired — see the
-/// `@objc` pin below. Constructing it is hermetically safe: `init(isBusy:)` takes only a closure and
-/// names no Sparkle type, so a test cannot bring an `SPUUpdater`/`SUHost` over the shared defaults
-/// domain into existence through this door either.
+/// Sparkle's delegate. One job: never relaunch over work in progress. Retained by
+/// `SparkleUpdaterModel`, since `SPUStandardUpdaterController` holds its delegate weakly. Internal
+/// rather than private so the selector test can construct one — safe, since `init(isBusy:)` names
+/// no Sparkle type.
+// DO NOT guard the check (`updater(_:mayPerform:)`) instead — Sparkle counts a
+// completed one and pushes updates a further ~24h out, without covering the real hazard.
+// Why: docs/distribution.md#relaunch-not-check
 @MainActor
 final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     private let isBusy: @MainActor () -> Bool
@@ -127,48 +91,13 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         super.init()
     }
 
-    /// Returning `true` defers the install and relaunch until `installHandler` is invoked. We
-    /// invoke it as soon as the app goes idle. Polling (rather than observing) keeps this to one
-    /// self-contained task with no lifetime coupling to the manager.
-    ///
-    /// **If the app never goes idle, nothing installs.** Sparkle's header is explicit that the
-    /// handler "must be completed", and there is no termination fallback on the framework side:
-    /// quitting installs nothing, because the installer was never told to proceed. Worse, the
-    /// update session stays open for the life of the process — `SPUUpdater` keeps `_driver`
-    /// non-nil, which holds `canCheckForUpdates` false, so "Check for Updates…" is dead too and
-    /// the user can't even retry by hand. Recovery is the next launch, which re-probes for an
-    /// in-progress installer or re-checks the feed. So this loop's liveness is not optional: it
-    /// rests on `isBusy()` eventually clearing, which is why model loading is bounded on both
-    /// sides (`TranscriptionManager.modelDownloadIdleTimeout` and `modelLoadCeiling`) rather than
-    /// left to run forever. Model loading is the *reachable* wedge, not the only one — a
-    /// transcription whose input sits on a network volume that vanishes mid-export can hang too,
-    /// and that path is knowingly unbounded (see AGENTS.md, "Distribution & updates").
-    ///
-    /// Two things this deliberately does NOT worry about, both checked against Sparkle's source
-    /// so they don't get re-litigated. A second concurrent postpone task is impossible:
-    /// `SPUInstallerDriver` sets `_postponedOnce` before calling this and never asks again, and
-    /// `SPUUpdater` refuses to start a second session while a driver is alive. And a late
-    /// `installHandler()` cannot cause a surprise relaunch: the block Sparkle passes captures the
-    /// driver weakly, so once the session is gone, invoking it does nothing.
-    ///
-    /// (The `catch` on the sleep below is therefore belt-and-braces rather than a live path —
-    /// nothing retains this task's handle, so nothing can cancel it.)
-    ///
-    /// NOT a complete guarantee, and don't document it as one. `SPUUpdaterDelegate.h` says this
-    /// hook "is not called if the user didn't relaunch on the previous update, in that case it
-    /// will immediately restart", and "may also not be called if the application is not going to
-    /// relaunch after it terminates". A user in either state who accepts an update mid-run still
-    /// loses the in-memory transcript. Closing that hole properly means persisting the transcript
-    /// (or warning before it is discarded), which is a separate change — see the "Distribution &
-    /// updates" note in AGENTS.md.
-    /// The label really is `untilInvokingBlock:` — `untilInvoking:` compiles fine but only
-    /// "nearly matches" the optional requirement, so it would never be called. That is a WARNING
-    /// only, and nothing here promotes warnings to errors, so the typo used to yield a green build
-    /// and a green suite with this hook silently dead. The explicit `@objc` selector below is what
-    /// keeps it wired now: the ObjC runtime dispatches on the selector, so renaming the Swift label
-    /// can no longer detach the method (verified — with the label wrong and this pin in place,
-    /// Sparkle still finds it). The pin is of course as typo-able as the label was, so
-    /// `postponeHookSelectorIsWired` in UpdaterTests asserts the selector itself.
+    /// Returning `true` defers the install and relaunch until `installHandler` is invoked, which
+    /// happens as soon as the app goes idle. A mitigation, not a guarantee — and if the app never
+    /// goes idle, nothing installs.
+    /// Why: docs/distribution.md#relaunch-not-check
+    // DO NOT rename the Swift label or drop this pin — the ObjC runtime dispatches on the selector,
+    // and a mismatched label is a warning only, leaving the hook silently dead.
+    // Why: docs/distribution.md#the-objc-selector-pin
     @objc(updater:shouldPostponeRelaunchForUpdate:untilInvokingBlock:)
     func updater(
         _ updater: SPUUpdater,
@@ -179,9 +108,9 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
 
         Task { @MainActor [isBusy] in
             while isBusy() {
-                // NOT `try?`: that swallows cancellation, and a cancelled task would then spin
-                // this loop on the main actor and freeze the UI. Bail instead — the update is
-                // then left for the next launch to pick up (see above).
+                // NEVER `try?` here — it swallows cancellation, and a cancelled task would spin
+                // this loop on the main actor and freeze the UI.
+                // Why: docs/distribution.md#relaunch-not-check
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }
             }
             installHandler()
@@ -190,59 +119,38 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     }
 }
 
-/// The Sparkle-backed `UpdaterModel`, owning the app's one `SPUStandardUpdaterController`
-/// (standard Sparkle UI, so no user-driver delegate — but an `UpdaterDelegate` IS wired up, to
-/// postpone the install-and-relaunch over work in progress, and this model is what keeps it alive:
-/// the controller's `updaterDelegate` outlet is `__weak`). `@MainActor` like the rest of the app's
-/// state; Sparkle drives its own UI on the main thread.
+/// The Sparkle-backed `UpdaterModel`, owning the app's one `SPUStandardUpdaterController` and the
+/// `UpdaterDelegate` that postpones an install over work in progress.
+/// Why: docs/distribution.md#the-seam
 @MainActor
 @Observable
 final class SparkleUpdaterModel: UpdaterModel {
-    /// OWNERSHIP ONLY — never read. This is the sole strong reference to the controller, whose
-    /// `.updater` is what `updater` below actually drives; without it the controller (and the
-    /// standard user driver it owns, which puts Sparkle's UI on screen) would deallocate at the
-    /// end of `init(startingUpdater:)`. So it is dead as data and live as a lifetime anchor:
-    /// unused-looking and unsafe to delete. Do not restore reads through it — the write paths and
-    /// the init branch all key off `updater`'s nil-ness, which is what keeps the gated, injected
-    /// and shipping shapes on one code path.
-    ///
-    /// Non-nil only on the production path (`init(startingUpdater:)` with the gate open); the
-    /// gated path and the test door both pass nil. That is why nil-ness HERE is not the
-    /// hermeticity guarantee — an injected model has a nil controller and a live `updater`. The
-    /// guarantee that matters is structural and belongs to the initializers: `SPUUpdater.init` —
-    /// started or not — builds an `SUHost` over the shared `.standard` defaults domain and
-    /// registers KVO observers on it, so a gated model must construct no Sparkle object at all,
-    /// not merely leave it unstarted. `init(startingUpdater:)` is the only initializer that
-    /// CONSTRUCTS one — the designated init below names `SPUStandardUpdaterController` in its
-    /// signature but only stores what it is handed, and the test door names no Sparkle type at
-    /// all, so it cannot bring one into existence even by accident. That last part is the
-    /// compiler's guarantee rather than a branch ordering's.
+    // DO NOT delete this "unused" property — it is the sole strong reference keeping the
+    // controller, and the Sparkle UI it owns, alive past `init(startingUpdater:)`.
+    // Why: docs/distribution.md#controller-is-ownership-only
     @ObservationIgnored private let controller: SPUStandardUpdaterController?
     /// What this model actually drives: `controller?.updater` on a live model, an injected fake on
     /// a test model, nil on a gated one. Nil-ness (not `controller`'s) is what the write paths and
     /// the init branch key off, so the gated and injected shapes share one code path — and so the
     /// branch a test exercises is the branch that ships, not a copy of it.
     @ObservationIgnored private let updater: (any SparkleUpdating)?
-    /// OWNERSHIP ONLY, like `controller`: `SPUStandardUpdaterController` holds its updater
-    /// delegate weakly, so without this strong reference the busy-check guard would deallocate
-    /// immediately and scheduled checks would resume interrupting transcriptions.
+    // DO NOT delete this either — the controller holds its delegate weakly, so without it the
+    // postpone guard deallocates and an update can relaunch mid-transcription.
+    // Why: docs/distribution.md#controller-is-ownership-only
     @ObservationIgnored private let delegate: UpdaterDelegate?
     @ObservationIgnored private var observation: NSKeyValueObservation?
     @ObservationIgnored private var autoChecksObservation: NSKeyValueObservation?
 
-    /// Mirror of `SPUUpdater.canCheckForUpdates` (KVO → `@Observable` stored property, so the
-    /// menu item's disabled state tracks it). Stays false when there is no live updater.
+    /// Mirror of `SPUUpdater.canCheckForUpdates`, so the menu item's disabled state tracks it.
+    /// Stays false when there is no live updater.
     private(set) var canCheckForUpdates = false
 
-    /// See `UpdaterModel.isActive`. Keyed off `updater`, like every other branch in this type, so
-    /// the gated and injected shapes stay on one code path.
+    /// See `UpdaterModel.isActive`. Keyed off `updater`, like every other branch in this type.
     var isActive: Bool { updater != nil }
 
-    /// Explicit storage + write-through — deliberately NOT a `didSet` mirror: under `@Observable`,
-    /// an init-time assignment runs the setter, which would write `SUEnableAutomaticChecks` into
-    /// the shared `.standard` domain during the test host's `Speech2TextApp.init`. Reading the
-    /// stored property keeps SwiftUI observation tracking; writes forward to Sparkle, which
-    /// persists.
+    // DO NOT collapse this into a `didSet` mirror — under `@Observable` the init-time assignment
+    // runs the setter, writing `SUEnableAutomaticChecks` into the developer's real defaults domain.
+    // Why: docs/distribution.md#kvo-mirrors
     private var autoChecksStorage: Bool
     var automaticallyChecksForUpdates: Bool {
         get { autoChecksStorage }
@@ -253,21 +161,19 @@ final class SparkleUpdaterModel: UpdaterModel {
         }
     }
 
-    /// The production front door, and the ONLY initializer that CONSTRUCTS a Sparkle object. The
-    /// designated init below names `SPUStandardUpdaterController` in its signature but merely
-    /// stores it; the test door names no Sparkle type at all, so it cannot construct one even by
-    /// accident. That guarantee is the compiler's rather than a branch ordering's, which is why
-    /// this is three initializers and not one.
-    /// - Parameter isBusy: whether the app is mid-transcription or mid-removal. Consulted by
-    ///   `UpdaterDelegate` to postpone an update's install-and-RELAUNCH — never to skip the check
-    ///   itself, which would defer updates by a further ~24h each time (see that type).
+    /// The production front door, and the ONLY initializer that constructs a Sparkle object.
+    // DO NOT collapse the three initializers into one — the test door names no Sparkle type, which
+    // is a compiler guarantee that a branch ordering cannot replace.
+    // Why: docs/distribution.md#three-initializers
+    /// - Parameter isBusy: whether the app is mid-transcription or mid-removal, consulted by
+    ///   `UpdaterDelegate` to postpone an update's install-and-relaunch.
     convenience init(
         startingUpdater: Bool = SparkleUpdaterModel.shouldStartUpdater(),
         isBusy: @escaping @MainActor () -> Bool = { false }
     ) {
         guard startingUpdater else {
-            // Gated: construct NO Sparkle objects (see `controller` — even an unstarted
-            // `SPUUpdater` binds an `SUHost` to the shared defaults domain).
+            // Gated: construct NO Sparkle objects — even an unstarted `SPUUpdater` binds an
+            // `SUHost` to the shared defaults domain.
             self.init(controller: nil, updater: nil, delegate: nil)
             return
         }
@@ -281,26 +187,22 @@ final class SparkleUpdaterModel: UpdaterModel {
         self.init(controller: controller, updater: controller.updater, delegate: delegate)
     }
 
-    /// Whether an update may install and relaunch the app right now — false while a transcription
-    /// or a data removal is in flight, because relaunching would destroy an in-memory transcript
-    /// or leave a half-deleted cache. See `UpdaterDelegate` for why this guards the relaunch
-    /// rather than the check.
-    ///
-    /// A pure function of its input, deliberately: the delegate method that consults it takes an
-    /// `SPUUpdater` and an `SUAppcastItem`, neither of which a test may construct.
+    /// Whether an update may install and relaunch right now — false while a transcription or a
+    /// removal is in flight. A pure function of its input, deliberately, since the delegate method
+    /// that consults it takes types no test may construct.
+    /// Why: docs/distribution.md#relaunch-not-check
     nonisolated static func mayRelaunchForUpdate(isBusy: Bool) -> Bool { !isBusy }
 
-    /// Test-only front door: runs the model's LIVE wiring against an injected driver. It names no
-    /// Sparkle type at all, so it CANNOT bring an `SPUUpdater`/`SUHost` over the shared defaults
-    /// domain into existence — the same hermetic-DI convention as `ManagerFixture`'s injectable
-    /// `UserDefaults` and `shouldStartUpdater(arguments:environment:)`.
+    /// Test-only front door: runs the model's LIVE wiring against an injected driver. Names no
+    /// Sparkle type at all, so it structurally cannot construct one.
+    /// Why: docs/distribution.md#three-initializers
     convenience init(updater: any SparkleUpdating) {
         self.init(controller: nil, updater: updater, delegate: nil)
     }
 
     /// The one designated initializer: everything downstream of "which driver do I have", so the
-    /// injected path and the shipping path execute the SAME lines and a test of the former is a
-    /// test of the latter rather than of a parallel copy.
+    /// injected path and the shipping path execute the SAME lines.
+    /// Why: docs/distribution.md#three-initializers
     private init(
         controller: SPUStandardUpdaterController?,
         updater: (any SparkleUpdating)?,
@@ -311,65 +213,36 @@ final class SparkleUpdaterModel: UpdaterModel {
         self.delegate = delegate
 
         guard let updater else {
-            // Seed the toggle from the shipped Info.plist default rather than Sparkle's SUHost
-            // resolution (defaults first, Info.plist as fallback), so the initial value can't
-            // depend on the developer's real app settings — deterministic on any machine.
+            // Seed from the shipped Info.plist default, not Sparkle's SUHost resolution, so the
+            // initial value can't depend on the developer's real app settings.
             autoChecksStorage =
                 Bundle.main.object(forInfoDictionaryKey: Self.autoChecksDefaultsKey) as? Bool
                 ?? true
             return
         }
 
-        // Live models seed from Sparkle (the persisted preference / current state). Both mirrors
-        // below seed by direct read and then re-read on change, so the value always comes from
-        // the same source and no captured payload can be applied out of order.
+        // Live models seed by direct read; both mirrors below re-read on change, so no captured
+        // payload can be applied out of order.
         autoChecksStorage = updater.automaticallyChecksForUpdates
         canCheckForUpdates = updater.canCheckForUpdates
-        // Deliberately NOT `MainActor.assumeIsolated`: of the SPUUpdater properties this model
-        // touches, `canCheckForUpdates` is the ONE that Sparkle's header does *not* document as
-        // main-thread-only (`automaticallyChecksForUpdates`, `automaticallyDownloadsUpdates` and
-        // `updateCheckInterval` all say "must be called on the main thread"; it doesn't — it is a
-        // readonly property driven by internal session state). An off-main delivery would make
-        // `assumeIsolated` trap and kill the shipped app, and no test could catch it because a
-        // fake only ever mutates on the main actor. So hop like the auto-checks mirror below and
-        // re-read the live value there.
+        // NEVER `MainActor.assumeIsolated` here — `canCheckForUpdates` is the one property Sparkle
+        // does not document as main-thread-only, and an off-main delivery would trap and kill the
+        // shipped app where no test could catch it.
+        // Why: docs/distribution.md#never-mainactorassumeisolated
         observation = updater.observeCanCheckForUpdates { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, let updater = self.updater else { return }
                 self.canCheckForUpdates = updater.canCheckForUpdates
             }
         }
-        // Mirror Sparkle-side writes to the auto-check preference back into the stored property so
-        // the Settings toggle can't go stale when something other than our setter changes it —
-        // Sparkle's own update-permission UI, for instance.
-        //
-        // SCOPE, precisely: this is KVO on `SPUUpdater.automaticallyChecksForUpdates`, so it fires
-        // for writes THROUGH that property — Sparkle's own permission UI, our setter's
-        // write-through. An external `defaults write` of the underlying `SUEnableAutomaticChecks`
-        // key while the app runs lands here TOO, but by way of Sparkle rather than of anything in
-        // this file: since 2.8.0 (`Synchronize updater settings with user defaults`, #2728)
-        // `SUHost.observeChangesFromUserDefaultKeys:` KVO-observes the defaults domain,
-        // `SPUUpdaterSettings.processCurrentAutomaticallyChecksForUpdates` re-reads and posts an
-        // explicit `will`/`didChangeValueForKey:`, and
-        // `+keyPathsForValuesAffectingAutomaticallyChecksForUpdates` propagates that to the
-        // updater property observed here. So do NOT add a second observation on
-        // `UserDefaults.standard` to "close the gap" — there is none, and reaching for the shared
-        // domain here is the exact coupling the three initializers above exist to prevent.
-        //
-        // That last leg is upstream behaviour we neither own nor test (exercising it needs a real
-        // `SPUUpdater`, which no test here may construct), and it is Sparkle implementation rather
-        // than a promise in its header — verified against the pinned 2.9.4 sources. Treat it as a
-        // nicety Sparkle currently provides, not an invariant of this file.
-        //
-        // Same main-actor hop and live re-read as the mirror above, for the same two reasons: KVO
-        // is delivered on the mutating thread and nothing here guarantees that is the main one,
-        // and an unstructured hop carries no ordering guarantee — so applying a captured value
-        // could overwrite a newer write, while re-reading always converges on Sparkle's current
-        // truth. (The echo of our own setter's write-through re-applies an identical value —
-        // harmless.) Re-deriving `updater` through self on the main actor keeps the non-Sendable
-        // Sparkle object from crossing the isolation boundary and adds no lifetime extension.
-        // (A gated model never reaches this code — it returned above with no observations, so it
-        // stays hermetic by construction.)
+        // Mirror Sparkle-side writes back into the stored property so the Settings toggle can't go
+        // stale when something other than our setter changes it.
+        // DO NOT add a second observation on `UserDefaults.standard` to "close the gap" — since
+        // 2.8.0 Sparkle already propagates external writes through this same property.
+        // Why: docs/distribution.md#scope-of-the-auto-checks-mirror
+        // NEVER `MainActor.assumeIsolated` in this handler either — KVO is delivered on the
+        // mutating thread, so a trap here would kill the shipped app and no fake could catch it.
+        // Why: docs/distribution.md#never-mainactorassumeisolated
         autoChecksObservation = updater.observeAutomaticallyChecksForUpdates { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, let updater = self.updater else { return }
@@ -384,10 +257,8 @@ final class SparkleUpdaterModel: UpdaterModel {
         updater?.checkForUpdates()
     }
 
-    /// The Sparkle defaults/Info.plist key behind `automaticallyChecksForUpdates`. Named (like
-    /// `testEnvironmentMarkers` below) so the gated seed above and the gate suite's
-    /// snapshot/restore share one spelling and can't drift — a fork would leave the tests
-    /// snapshotting a key the model no longer touches, passing vacuously.
+    /// The Sparkle defaults/Info.plist key behind `automaticallyChecksForUpdates`. Named so the
+    /// gated seed and the gate suite share one spelling and can't drift.
     nonisolated static let autoChecksDefaultsKey = "SUEnableAutomaticChecks"
 
     /// XCTest environment markers that identify a test-hosted process. Named so the gate below and
@@ -397,8 +268,7 @@ final class SparkleUpdaterModel: UpdaterModel {
     ]
 
     /// Whether the running build is a Debug build. A stored flag rather than a `#if` inside
-    /// `shouldStartUpdater` so the policy below is a plain function of its inputs and can be
-    /// tested for BOTH answers from a test run that is itself always Debug.
+    /// `shouldStartUpdater`, so both answers are testable from a run that is always Debug.
     nonisolated static let isDebugBuild: Bool = {
         #if DEBUG
         return true
@@ -407,34 +277,10 @@ final class SparkleUpdaterModel: UpdaterModel {
         #endif
     }()
 
-    /// Whether this launch should start a live updater.
-    ///
-    /// **Debug builds never do.** A developer's `⌘R` run is not a shipped app: starting Sparkle
-    /// there binds an `SUHost` to the real `com.speech2text.app` defaults domain and writes
-    /// `SULastCheckTime` and friends into the preferences of whatever copy the developer has
-    /// installed — the same cross-talk the three initializers and the fakes exist to prevent.
-    /// Worse, `CURRENT_PROJECT_VERSION` in a working tree is routinely *older* than the published
-    /// feed head, so Sparkle would eventually offer to replace the DerivedData build with a
-    /// download. Release is the only configuration that ships, and the only one that updates.
-    ///
-    /// The `-uiTesting` and XCTest checks are then belt-and-braces for the same reason they were
-    /// written — unit tests run IN the app (test host = the app, so `Speech2TextApp.init`
-    /// executes on every unit-test run) and XCUITest launches the real app with `-uiTesting`.
-    /// They are unreachable while tests only ever run in Debug, and are kept so that running a
-    /// suite against a Release build doesn't silently start an updater.
-    ///
-    /// **That is the whole of what they buy, and it is worth being precise about the limit.** They
-    /// do not make a Release-built test run isolated: `Speech2TextApp.init` reaches
-    /// `uiTestSettingsStore()` only inside `#if DEBUG`, so the same launch this gate declines to
-    /// start an updater for is persisting its settings to `.standard` — the developer's real
-    /// preferences. The scopes differ deliberately rather than by oversight. The seam *injects
-    /// state* from argv and the environment (a preloaded file queue, a stubbed transcript), which
-    /// must not exist in a shipped binary where any process could drive it; this gate only
-    /// *declines to act*, so it is safe to keep unconditional and cheap to leave in. Aligning the
-    /// two would mean either shipping the injection seam or deleting the one check here that does
-    /// anything at all in Release.
-    ///
-    /// All three inputs are injectable so the gating tests can exercise every branch.
+    /// Whether this launch should start a live updater. Debug builds never do; the `-uiTesting`
+    /// and XCTest checks sit behind that as belt-and-braces for a suite run against Release. All
+    /// three inputs are injectable so the gating tests can exercise every branch.
+    /// Why: docs/distribution.md#the-launch-gate
     static func shouldStartUpdater(
         arguments: [String] = ProcessInfo.processInfo.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -447,12 +293,10 @@ final class SparkleUpdaterModel: UpdaterModel {
     }
 }
 
-/// The app-menu item that triggers a manual update check — a dedicated command `View` like
-/// `AboutMenuCommand`/`HelpMenuCommand` (its siblings in the app menu). Internal (not private,
-/// unlike those two) so the render tests can drive it against a `FakeUpdater`. The dedicated view
-/// is Sparkle's documented menu-item pattern: SwiftUI Observation re-evaluates this body when the
-/// observable `canCheckForUpdates` changes, which is what keeps the disabled state fresh —
-/// Commands have no AppKit-style re-validation on menu open to fall back on.
+/// The app-menu item that triggers a manual update check. A dedicated command `View` — Sparkle's
+/// documented pattern — so SwiftUI Observation keeps its disabled state fresh. Internal, unlike its
+/// About/Help siblings, so render tests can drive it against a `FakeUpdater`.
+/// Why: docs/distribution.md#the-launch-gate
 struct CheckForUpdatesCommand: View {
     let updater: any UpdaterModel
 

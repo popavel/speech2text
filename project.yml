@@ -36,9 +36,10 @@ packages:
   # Auto-update framework (binary xcframework; Xcode links and embeds it automatically). This zip
   # also carries Sparkle's CLI tools, which is where publish-release.yml gets `generate_appcast` —
   # SwiftPM verifies the whole artifact against the checksum in Sparkle's Package.swift, so the
-  # appcast tooling is both integrity-checked and impossible to skew from the framework. Never
-  # re-add a tarball download: Sparkle's release tarballs are ad-hoc signed, so a download can't
-  # be verified and would hand the EdDSA signing secret to unauthenticated code.
+  # appcast tooling is both integrity-checked and impossible to skew from the framework.
+  # NEVER re-add a tarball download — Sparkle's release tarballs are ad-hoc signed, so a download
+  # can't be verified and would hand the EdDSA signing secret to unauthenticated code.
+  # Why: docs/distribution.md#the-appcast
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.9.4"
