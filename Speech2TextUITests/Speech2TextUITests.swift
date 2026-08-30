@@ -21,7 +21,13 @@ final class Speech2TextUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    override func tearDown() {
+    /// `async` on purpose. The `@MainActor` on this class does NOT reach an override of a
+    /// `nonisolated` superclass method — an override inherits the isolation of the declaration it
+    /// overrides, and `XCTestCase.tearDown()` is nonisolated. So a plain sync override cannot touch
+    /// XCUIApplication's main-actor-isolated members under Swift 6 strict concurrency. The async
+    /// variant can hop explicitly. (`tearDown() async throws` runs last in XCTest's teardown
+    /// sequence rather than first, which is immaterial here — nothing else tears down.)
+    override func tearDown() async throws {
         // Terminate the app after every test — pass or fail. The help book is a second, restorable
         // `Window`; if a test opens it and then fails before closing it (continueAfterFailure = false
         // aborts at the first failed assertion), the window would otherwise be left open and could be
@@ -31,8 +37,8 @@ final class Speech2TextUITests: XCTestCase {
         // Suppressing restoration via `-NSQuitAlwaysKeepsWindows NO` / `-ApplePersistenceIgnoreState`
         // launch args was tried instead, but those prevent this SwiftUI app's main window from
         // appearing at all.
-        XCUIApplication().terminate()
-        super.tearDown()
+        await MainActor.run { XCUIApplication().terminate() }
+        try await super.tearDown()
     }
 
     /// Wait for `element` to register in the accessibility tree, then assert it did.
