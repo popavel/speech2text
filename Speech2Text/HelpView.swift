@@ -57,9 +57,9 @@ enum HelpTopic: String, CaseIterable, Identifiable {
 /// standalone "Uninstalling Speech2Text…" window — uninstalling is now this book's final topic.
 ///
 /// Facts that can drift from the code are DERIVED from `TranscriptionManager`'s canonical `static`
-/// declarations and covered by `HelpViewTests`. The rest — every keyboard shortcut and every
-/// control label named in the prose — is not derived, so renaming one in `ContentView` builds
-/// green and passes tests while leaving the help book misdescribing the UI.
+/// declarations and covered by `HelpViewTests`. The rest is hand-written prose, guarded unevenly:
+/// `labelsAppearInBothUIAndHelp` catches a rename of most control labels, but "Storage" and a
+/// button-only "Transcribe" rename slip through it, and the keyboard shortcuts nothing checks.
 /// Why: docs/architecture.md#the-help-books-derived-facts
 struct HelpView: View {
     /// The help book's title — one source shared by the `Window` scene, the Help-menu item (both in

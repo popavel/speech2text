@@ -4,17 +4,13 @@ import ViewInspector
 
 @testable import Speech2Text
 
-// View-render tests for ContentView. These assert that the SwiftUI hierarchy
-// reflects the injected TranscriptionManager's state — they do NOT exercise the
-// manager's behavior (that lives in TranscriptionManagerTests) and never tap
-// Transcribe (which would load WhisperKit). All inspection is static: we read
-// the rendered body of a freshly built view, so no ViewHosting / XCTest
-// machinery is needed and the suite stays pure Swift Testing.
+// View-render tests for ContentView: the SwiftUI hierarchy reflects the injected manager's state.
+// Statically inspected; never taps Transcribe. Manager *behavior* is tested in
+// TranscriptionManagerTests.
 //
-// Assertion-style convention: use bare `try` when the found view's value is then
-// asserted (the result is bound and used); use `#expect(throws: Never.self) { ... }`
-// for existence-only checks, where the result is discarded — it documents the
-// "this lookup must succeed" intent and avoids an unused-result warning.
+// Assertion style: bare `try` when the found value is asserted, `#expect(throws: Never.self)` for
+// existence-only checks.
+// Why: docs/testing.md#static-inspection
 @MainActor
 @Suite("ContentView")
 struct ContentViewTests {

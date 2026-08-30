@@ -311,13 +311,17 @@ state with no interleaving.
 
 **Backs:** `Speech2Text/ContentView.swift` (`refreshSize`)
 
-`refreshSize()` recomputes the cache size off the main actor, and four separate things keep it
-honest:
+`refreshSize()` recomputes the cache size off the main actor, and five separate things keep it
+honest — four in `refreshSize` itself, plus the pre-delete cancel that `performRemoval` owns:
 
 - **Coalesced via `isMeasuring`** — a call while a walk is running is a no-op, so the
   `.task` + `.onChange(controlActiveState)` double-fire on first open (and rapid refocus) collapses
   to a single walk. A genuine refocus after it finishes still re-measures. The delete path clears
-  `isMeasuring` where it cancels the walk, so its post-delete re-measure isn't blocked.
+  `isMeasuring` where it cancels the walk — **it cannot rely on the cancelled walk clearing the
+  flag itself**, because that walk may not have resumed yet, and until it does the failure branch's
+  `refreshSize()` would be coalesced away and Settings would keep showing the pre-delete size.
+- **Cancelled before a delete starts** — `performRemoval` cancels the in-flight walk so a GB-scale
+  enumerator isn't racing `removeItem` over the same tree, reading entries as they are unlinked.
 - **Bails while a delete is in flight** — a walk begun against a tree being removed could read a
   partial size and land after the delete publishes `0`. `deleteAllModels` sets `isRemovingData`
   synchronously before its first suspension and clears it only after, so this guard covers the

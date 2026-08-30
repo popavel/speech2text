@@ -3,11 +3,9 @@ import Testing
 
 @testable import Speech2Text
 
-// Drives `TranscriptionManager.startTranscription()` end-to-end with real
-// WhisperKit. Gated because the `tiny` model (~75 MB) is downloaded over the
-// network on first use. xcodebuild forwards env vars prefixed `TEST_RUNNER_`
-// to the test process with the prefix stripped; the plain `RUN_WHISPERKIT_TESTS`
-// form works when running tests directly (not through xcodebuild).
+// Drives `startTranscription()` end-to-end with real WhisperKit. Gated, because the `tiny` model
+// (~75 MB) is downloaded on first use.
+// Why: docs/testing.md#integration-gating
 
 private let whisperKitTestsEnabled: Bool = {
     let env = ProcessInfo.processInfo.environment
@@ -31,17 +29,9 @@ private let whisperKitTestsEnabled: Bool = {
 )
 struct TranscriptionPipelineIntegrationTests {
 
-    // Shared across the tests below so the ~75 MB tiny model is loaded into
-    // memory once for the whole (serialized) suite instead of once per test.
-    // `modelCachingAcrossRuns` deliberately uses its own fresh manager because
-    // it asserts first-load-then-reuse behavior.
-    //
-    // Built on a `ManagerFixture` (ephemeral store), NOT `TranscriptionManager()`: this target is
-    // app-hosted, so `.standard` is the app's real `com.speech2text.app` domain — the `.tiny`/
-    // language writes below would otherwise clobber the developer's saved settings when the suite
-    // runs. The fixture is a process-lifetime `static`, so its store outlives every write here; it
-    // is released only at process exit, leaving a single ephemeral `s2t.test.*` domain (never
-    // `.standard`) — an acceptable residue for this opt-in suite.
+    // Shared so the model loads once for the whole serialized suite. Built on a `ManagerFixture`,
+    // NOT `TranscriptionManager()` — this target is app-hosted, so `.standard` is the real domain.
+    // Why: docs/testing.md#integration-gating
     private static let sharedFixture = ManagerFixture()
     private static let sharedManager = sharedFixture.makeManager()
 

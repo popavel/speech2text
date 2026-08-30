@@ -14,9 +14,9 @@ import WhisperKit
 @Suite("Settings persistence")
 struct SettingsPersistenceTests {
 
-    /// A non-auto language guaranteed to exist in WhisperKit's mirrored list. Resolved with the
-    /// same `first { code == "es" }` predicate `loadPersistedSettings` uses, so a persisted "es"
-    /// round-trips back to this exact entry regardless of alias ordering.
+    /// A non-auto language guaranteed to exist in WhisperKit's mirrored list, looked up by `code`
+    /// so the test doesn't hard-code a display name. Persistence itself round-trips the entry's
+    /// `id` (its `displayName`), not its code — see `loadPersistedSettings`.
     private func spanishLanguage() -> TranscriptionLanguage? {
         TranscriptionLanguage.allCases.first { $0.code == "es" }
     }

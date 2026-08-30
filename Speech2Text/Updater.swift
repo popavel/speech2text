@@ -79,7 +79,7 @@ extension SPUUpdater: SparkleUpdating {
 /// `SparkleUpdaterModel`, since `SPUStandardUpdaterController` holds its delegate weakly. Internal
 /// rather than private so the selector test can construct one — safe, since `init(isBusy:)` names
 /// no Sparkle type.
-// DO NOT guard the check (`updater(_:mayPerform:)`) instead — Sparkle counts a
+// DO NOT guard the check (`updater(_:mayPerform:)`) instead — Sparkle counts a refused check as a
 // completed one and pushes updates a further ~24h out, without covering the real hazard.
 // Why: docs/distribution.md#relaunch-not-check
 @MainActor

@@ -6,36 +6,12 @@ import Testing
 
 // Tests for the model-download stall watchdog (Speech2Text/ModelDownloadWatchdog.swift).
 //
-// WHY THIS EXISTS: `startTranscription()` sets `status = .loadingModel` before awaiting the model
-// download, so anything that never returns pins `isProcessing` true for the rest of the process —
-// the Transcribe button stays disabled forever, and Sparkle's postpone loop (Updater.swift) polls
-// until the app dies. WhisperKit's downloader cannot save us: its retry budget RESETS on every
-// 10 MB chunk, so a trickling connection retries indefinitely, and its metadata phase runs on
-// `URLSession.shared` with a 7-day resource timeout.
+// `stallingOperationIsAbandoned` and `tickingOperationSurvivesPastIdleWindow` are the two halves of
+// the "slow is fine, silent is not" claim and should be read as a pair.
+// Why: docs/concurrency.md#stall-watchdog
 //
-// WHY A WATCHDOG AND NOT A DEADLINE: a 1.5 GB model on a slow link legitimately takes hours. A
-// wall-clock timeout would have to be so generous it stops being useful. `withStallWatchdog`
-// instead measures the gap BETWEEN progress reports, so "slow" and "wedged" stop being the same
-// thing — `stallingOperationIsAbandoned` and `tickingOperationSurvivesPastIdleWindow` are the two
-// halves of that claim and should be read as a pair.
-//
-// The second caller, `loadModels()`, has nothing to tick from, so it passes a ticker nobody ticks
-// and the helper degenerates into a plain ceiling — the behavior `stallingOperationIsAbandoned`
-// covers, since a never-ticking operation is exactly that case.
-//
-// ON WALL-CLOCK TIME IN TESTS: the rest of this suite is deliberately clock-free (bounded
-// `Task.yield()` spins). A timeout has no other observable — it IS elapsed time — so this file is
-// the one justified exception. Every window here is in milliseconds, and the assertions are
-// one-directional wherever they can be: that something DID time out, or DID finish.
-//
-// One test cannot be one-directional, and it is worth naming rather than hiding.
-// `tickingOperationSurvivesPastIdleWindow` proves a progressing operation is NOT killed, so it
-// necessarily depends on its ticks landing inside the idle window — a scheduling hiccup longer
-// than `tickingIdle` would fail it. That margin is the flake budget, and it is set wide (a full
-// second, fifty times the 20 ms tick interval) because Swift Testing runs other `@MainActor`
-// suites in this same process concurrently, so the main actor this test ticks from is genuinely
-// contended on a loaded runner. Widen it further — keeping the operation's total runtime above
-// it, or the test stops proving anything — rather than deleting the test.
+// This is the ONE file allowed to use wall-clock time — a timeout has no other observable.
+// Why: docs/testing.md#the-wall-clock-exception
 
 @Suite("Model download stall watchdog")
 @MainActor
@@ -44,19 +20,20 @@ struct StallWatchdogTests {
     private static let idle: Duration = .milliseconds(100)
     private static let poll: Duration = .milliseconds(10)
 
-    /// A deliberately roomier window for the one test that must NOT trip: 50× the tick interval,
-    /// so only a pathological main-actor stall could make it look like a wedge. See the header.
+    /// A deliberately roomier window for the one test that must NOT trip: 50× the tick interval.
+    // This margin IS the flake budget: widen it (keeping the operation's runtime above it).
+    // NEVER delete the test it protects to make a flake go away.
+    // Why: docs/testing.md#the-flake-budget
     private static let tickingIdle: Duration = .seconds(1)
 
-    /// The drain for tests whose operation honors cancellation and so unwinds immediately: they
-    /// never actually wait this long, and the width is pure flake margin — the drain must not
-    /// elapse ahead of an operation that is merely descheduled behind a contended main actor.
+    /// The drain for tests whose operation honors cancellation and so unwinds immediately. Pure
+    /// flake margin: it must not elapse ahead of an operation merely descheduled behind a
+    /// contended main actor.
     private static let drain: Duration = .seconds(2)
 
-    /// The opposite case, for `drainIsBounded` alone: it must be comfortably SHORTER than that
-    /// test's deliberately uncancellable operation — a detached 600-SECOND sleep, i.e. one that
-    /// effectively never finishes — or the drain would end early on `didFinish` and the bound
-    /// would go untested.
+    /// The opposite case, for `drainIsBounded` alone: comfortably SHORTER than that test's
+    /// deliberately uncancellable operation (a detached 600-second sleep, i.e. one that effectively
+    /// never finishes), or the drain would end early on `didFinish` and the bound go untested.
     private static let shortDrain: Duration = .milliseconds(200)
 
     @Test("An operation that finishes returns its value")
@@ -140,14 +117,10 @@ struct StallWatchdogTests {
         #expect(cancelled.withLock { $0 })
     }
 
-    /// The drain is a courtesy, not another way to hang: an operation that ignores cancellation
-    /// must not hold the failure back beyond it.
-    ///
-    /// The operation here effectively never finishes, which is the only way this tests the bound
-    /// rather than a timing difference — a merely *slow* operation lets `didFinish` end the drain
-    /// early, so the deadline could be deleted and the test would still pass. The time limit is
-    /// what turns "hangs forever" into a red run: with the bound intact this returns in ~0.3 s,
-    /// and without it the call never returns at all.
+    /// The drain is a courtesy, not another way to hang. The operation effectively never finishes,
+    /// which is the only way this tests the bound rather than a timing difference; the time limit
+    /// turns "hangs forever" into a red run.
+    /// Why: docs/testing.md#the-wall-clock-exception
     @Test(
         "An uncancellable operation is abandoned anyway once the drain elapses",
         .timeLimit(.minutes(1))

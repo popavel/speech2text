@@ -17,7 +17,8 @@ both unit targets' `sources:`, so both build their managers the same hermetic wa
 
 ## Swift Testing convention
 
-**Backs:** all of `Speech2TextTests/` and `Speech2TextIntegrationTests/`
+**Backs:** all of `Speech2TextTests/` and `Speech2TextIntegrationTests/` ·
+`Speech2TextUITests/Speech2TextUITests.swift` (the exception below)
 
 Tests use **Swift Testing** (`@Suite`, `@Test`, `#expect`), not XCTest. Keep new tests in that
 style.
@@ -186,18 +187,26 @@ pin is that the help copy stays *wired to* the canonical source: if a topic hard
 instead of interpolating the derived value, the rendered text would stop matching and the test would
 fail.
 
-Keyboard shortcuts and the exact Settings button labels are deliberately illustrative prose, not
-derived. Their drift is guarded separately by `labelsAppearInBothUIAndHelp`, whose label table is
-the guard's single source: each label must render **both** as a real control and somewhere in the
-help copy, so any **2-of-3 divergence** (control renamed, prose renamed, or the table left stale)
-trips it.
+The control labels named in that prose are guarded separately by `labelsAppearInBothUIAndHelp`,
+whose 13-row table is the guard's single source: each label must render **both** as a real control
+and somewhere in the help copy, so any **2-of-3 divergence** (control renamed, prose renamed, or the
+table left stale) trips it.
 
-Two caveats on that guard. "Storage" is named in prose but its control is a `Section` header, which
-doesn't inspect as a plain `Text` — it is covered by the derived Storage-path tests instead. And the
-control-side check is a plain text match, so a label rendering more than once is only partially
-guarded: **"Transcribe"** is both the run button and `DecodingTask.transcribe.displayName` (the Task
-picker option), so renaming the button alone would still find the text and pass. It is kept for the
-prose-side and simultaneous-rename coverage it does provide.
+**The keyboard shortcuts — ⌘O, ⌘⏎, ⌘, — are deliberately out of scope for that guard** and are
+therefore checked by nothing: a `KeyEquivalent` isn't recoverable from the rendered hierarchy, so
+there is no derivable expectation to compare against. A rebind leaves the help book wrong and every
+suite green.
+
+One label is only partially covered, and one is absent. **"Storage"** is named in prose but its control is a
+`Section` header, which doesn't inspect as a plain `Text`, so it is absent from the table and
+covered by the derived Storage-path tests instead. And the control-side check is a plain text match,
+so a label rendering more than once is only partially guarded: **"Transcribe"** is both the run
+button and `DecodingTask.transcribe.displayName` (the Task picker option), so renaming the button
+alone would still find the text and pass. It is kept for the prose-side and simultaneous-rename
+coverage it does provide.
+
+So of the labels the help book names: 12 are fully guarded, "Transcribe" partially, "Storage" by a
+different test, and the three shortcuts not at all.
 
 `HelpDetailView`'s `.id(topic)` gives the `ScrollView` a fresh identity per topic so the reused
 detail slot resets its scroll offset on a switch; a test pins that so the reset can't be silently
@@ -215,9 +224,9 @@ None of these use ViewInspector — they exercise the manager directly.
 
 `SettingsPersistenceTests` covers persistence of the four user settings across
 `TranscriptionManager` instances that **share a store**, plus `restoreDefaults()`. Every manager
-comes from a `ManagerFixture`, so nothing touches `.standard`. Its Spanish helper resolves the
-language with the same `first { code == "es" }` predicate `loadPersistedSettings` uses, so a
-persisted `"es"` round-trips to that exact entry regardless of alias ordering.
+comes from a `ManagerFixture`, so nothing touches `.standard`. Its Spanish helper looks the entry up
+by `code` purely so the test doesn't hard-code a display name — **the persisted value is the entry's
+`id`**, which is its `displayName`, and `loadPersistedSettings` matches on `$0.id == id`.
 
 `unresolvableLanguageIsPreserved` seeds a **stale** language id — one that resolved under an earlier
 WhisperKit and no longer matches any row — and asserts the in-memory value falls back to `.auto`
@@ -245,9 +254,10 @@ Both suites are described in [architecture.md#persisted-settings](architecture.m
 **Backs:** `Speech2TextTests/StallWatchdogTests.swift`
 
 The rest of the suite is deliberately clock-free (bounded `Task.yield()` spins). **A timeout has no
-other observable — it *is* elapsed time — so this file is the one justified exception.** Every
-window here is in milliseconds, and the assertions are one-directional wherever they can be: that
-something *did* time out, or *did* finish.
+other observable — it *is* elapsed time — so this file is the one justified exception.** The
+stalling windows are milliseconds; the two margins that must *not* trip are deliberately seconds
+(see below). The assertions are one-directional wherever they can be: that something *did* time
+out, or *did* finish.
 
 `stallingOperationIsAbandoned` and `tickingOperationSurvivesPastIdleWindow` are the two halves of
 the "slow ≠ wedged" claim and should be read as a pair. The second caller of the helper,

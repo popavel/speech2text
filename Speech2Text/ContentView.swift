@@ -741,7 +741,13 @@ struct SettingsView: View {
         _ removal: @escaping @MainActor () async -> Bool
     ) {
         Task {
+            // Cancel any in-flight size walk first, so a GB-scale enumerator isn't racing
+            // `removeItem` over the same tree.
+            // Why: docs/concurrency.md#cache-walk-ownership
             refreshTask?.cancel()
+            // DO NOT drop this as redundant — the cancelled walk's own `isMeasuring = false` may
+            // not have landed, and the failure branch's `refreshSize()` would then be coalesced away.
+            // Why: docs/concurrency.md#cache-walk-ownership
             isMeasuring = false
             let removed = await removal()
             if removed {

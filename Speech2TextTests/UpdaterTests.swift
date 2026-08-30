@@ -4,20 +4,12 @@ import ViewInspector
 
 @testable import Speech2Text
 
-// Tests for the Sparkle auto-update seam (Speech2Text/Updater.swift).
+// Tests for the Sparkle auto-update seam (Speech2Text/Updater.swift), via two fakes:
+// `FakeUpdater` for the view-facing protocol, `FakeSparkleUpdater` for the Sparkle-facing one.
 //
-// THE RULE THESE TESTS EXIST TO ENFORCE: never construct a real `SPUUpdater`, started or not.
-// It builds an `SUHost` over the app's `.standard` UserDefaults domain, and unit tests run
-// *inside* the app here (test host = the app, so `Speech2TextApp.init` executes on every test
-// run) — so a real updater would read and write the developer's own installed-app preferences.
-// Two seams keep the model testable without one:
-//
-//   * `FakeUpdater` fakes the view-facing `UpdaterModel`, and is what render tests inject.
-//   * `FakeSparkleUpdater` fakes the Sparkle-facing `SparkleUpdating` protocol — the slice of
-//     `SPUUpdater` the model actually drives — and is injected through
-//     `SparkleUpdaterModel.init(updater:)`. That initializer names no Sparkle type at all, so it
-//     structurally cannot bring an `SPUUpdater`/`SUHost` into existence. This is what gives the
-//     model's LIVE branch (seeding, both KVO mirrors, both write paths) real coverage.
+// NEVER construct a real `SPUUpdater`, started or not — it binds an `SUHost` to the app's
+// `.standard` domain, which the in-process test host shares with the developer's real app.
+// Why: docs/testing.md#never-construct-spuupdater
 
 /// Fakes the view-facing protocol. Views depend on `UpdaterModel`, never on Sparkle, so this is
 /// all a render test needs.
@@ -173,21 +165,11 @@ struct SparkleUpdaterLiveWiringTests {
 
     @Test("The postpone hook keeps the exact selector Sparkle calls")
     func postponeHookSelectorIsWired() {
-        // The one part of the postpone guard that a green build does NOT prove. Sparkle finds this
-        // hook by selector at runtime, and `untilInvoking:` compiles fine while only "nearly
-        // matching" the optional requirement — so the typo yields a green build AND a green suite
-        // with the hook silently never called (no warnings-as-errors here to catch it). The `@objc`
-        // pin in Updater.swift fixes the selector; this asserts the pin is still doing its job.
-        //
-        // Constructing the delegate is hermetically safe: `init(isBusy:)` takes only a closure, so
-        // no `SPUUpdater`/`SUHost` over the shared defaults domain comes into existence.
-        //
-        // The name is spelled out as a runtime string ON PURPOSE — do NOT "fix" this to
-        // `#selector(UpdaterDelegate.updater(_:shouldPostponeRelaunchForUpdate:untilInvokingBlock:))`.
-        // That form is *derived from* the `@objc` pin under test, so it would keep passing after the
-        // pin was deleted or mistyped, which is the entire failure this test exists to catch.
-        // `NSSelectorFromString` rather than `Selector(_:)` because the latter draws a
-        // "use '#selector' instead" warning for exactly the literal we need to keep.
+        // The one part of the postpone guard a green build does NOT prove: Sparkle finds the hook
+        // by selector at runtime, so a mismatched Swift label leaves it silently dead.
+        // DO NOT "fix" this to `#selector(...)` — that form derives from the `@objc` pin under
+        // test, so it would keep passing after the pin was deleted or mistyped.
+        // Why: docs/testing.md#selector-tripwire
         let selector = NSSelectorFromString("updater:shouldPostponeRelaunchForUpdate:untilInvokingBlock:")
 
         #expect(UpdaterDelegate(isBusy: { false }).responds(to: selector))

@@ -5,21 +5,12 @@ import WhisperKit
 
 @testable import Speech2Text
 
-// View-render tests for the in-app help book (HelpView / HelpDetailView). Like the ContentView
-// suite, all inspection is static: each assertion builds a fresh view and reads its rendered body,
-// so no ViewHosting / XCTest machinery is needed and the suite stays pure Swift Testing.
+// View-render tests for the in-app help book. Statically inspected, like the ContentView suite.
 //
-// The point of these tests is wiring protection: the help copy DERIVES its factual claims from
-// TranscriptionManager's canonical `static` declarations (supported formats, model display names +
-// default, task labels, the storage/uninstall paths, the batch-run header, the language count), and
-// each assertion recomputes the expected string from that same source. Because both sides derive
-// from one source, a content change (a new format, a re-worded size) propagates to the copy AND the
-// expectation together, so these can't catch a wording change — nor do they need to. What they
-// pin is that the help copy stays *wired to* the canonical source: if a topic were changed to
-// hard-code a literal instead of interpolating the derived value, the rendered text would stop
-// matching the recomputed expectation and the test would fail. (Keyboard shortcuts and the exact
-// Settings button labels are deliberately illustrative prose, not derived — see HelpView's doc
-// comment; their drift is guarded separately by `labelsAppearInBothUIAndHelp` below.)
+// These are WIRING protection, not wording protection: both the copy and the expectation derive
+// from TranscriptionManager's canonical statics, so they catch a topic that hard-codes a literal
+// instead of interpolating — never a rewording.
+// Why: docs/testing.md#the-help-book-is-wiring-protected-not-wording-protected
 @MainActor
 @Suite("HelpView")
 struct HelpViewTests {
@@ -176,16 +167,9 @@ struct HelpViewTests {
 
     // MARK: - Detail pane identity (HelpDetailView)
 
-    // The tests above assert `HelpDetailView(topic:)` content; this pins its per-topic scroll
-    // identity. The `HelpView` *container* rendering (sidebar rows and which detail pane is shown,
-    // plus the nil-selection → Overview `?? .overview` fallback in the detail slot) is NOT
-    // inspectable here: ViewInspector 0.10.3 can't unwrap a custom view whose body is a 2-column
-    // `NavigationSplitView(sidebar:detail:)` — every traversal (generic `find`, `navigationSplitView()`,
-    // `find(NavigationSplitView.self)`) throws "does not have 'content' attribute" because its child
-    // extraction expects the 3-column `content` column. Reshaping production purely to satisfy the
-    // test isn't worth it, so the sidebar `helpTopic-*` rows and the default `helpDetail-overview`
-    // pane stay covered by the XCUITest (`testHelpBookOpensFromMenuAndNavigatesTopics`), which drives
-    // the real container.
+    // The `HelpView` container itself is NOT inspectable (ViewInspector 0.10.3 vs a 2-column
+    // `NavigationSplitView`); the XCUITest covers it instead.
+    // Why: docs/testing.md#viewinspector-limits
 
     @Test("Detail ScrollView is identified per topic so scroll offset resets on switch")
     func detailScrollViewIsIdentifiedPerTopic() throws {
@@ -211,19 +195,10 @@ struct HelpViewTests {
         let content = try ContentView(manager: manager).inspect()
         let settings = try SettingsView(manager: fixture.makeManager(), updater: FakeUpdater()).inspect()
 
-        // Canonical list of the control labels the help book names in prose (the shortcut glyphs
-        // ⌘O/⌘⏎/⌘, aren't derivable from a KeyEquivalent, so they stay best-effort and are out of
-        // scope). This table is the guard's single source: each label must render BOTH as a real
-        // control (ContentView, or SettingsView when `inSettings`) AND somewhere in the help copy —
-        // any 2-of-3 divergence (control renamed, prose renamed, or this table left stale) trips it.
-        // ("Storage" is named in prose too, but its control is a `Section` header, which doesn't
-        // inspect as a plain Text — so it's covered by the derived Storage-path tests instead.)
-        //
-        // Caveat: the control-side check is a plain text match, so a label that renders more than
-        // once is only partially guarded. "Transcribe" is the one such case — it's both the run
-        // button and `DecodingTask.transcribe.displayName` (the Task picker's option) — so a rename
-        // of the button alone (leaving the picker option) would still find the text and pass. It's
-        // kept in the table for the prose-side and simultaneous-rename coverage it does provide.
+        // The guard's single source: each label must render BOTH as a real control AND in the help
+        // copy, so any 2-of-3 divergence trips it. Two known holes ("Storage", "Transcribe") and
+        // the excluded shortcut glyphs are documented.
+        // Why: docs/testing.md#the-help-book-is-wiring-protected-not-wording-protected
         let labels: [(text: String, inSettings: Bool)] = [
             ("Browse Files", false),
             ("Clear All", false),

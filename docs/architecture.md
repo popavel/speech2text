@@ -94,9 +94,10 @@ stays on disk so it resolves again if that entry returns — rather than being e
 mere launch. It is called once from `init`, and each *successful* assignment is idempotent with the
 property's `didSet`, which writes back the value just read.
 
-The language is stored by its **`id`**, and `loadPersistedSettings` resolves it with the same
-predicate the tests use, so a persisted value round-trips to the same entry regardless of alias
-ordering.
+The language is stored by its **`id`** — which is its `displayName`, unique per entry — and
+`loadPersistedSettings` resolves it with `$0.id == id`, so a persisted value round-trips to the same
+entry regardless of alias ordering. (The tests look languages up by `code`; that is only how they
+*find* a fixture entry, not what gets persisted.)
 
 `restoreDefaults()` resets all four (Transcribe, Base, temperature 0, Auto-detect). Each
 assignment's `didSet` re-persists, so the store reflects the reset too. It deliberately **does not
@@ -214,8 +215,11 @@ has to be mirrored here by hand. That non-derived surface is:
   automatically"), the main-window controls ("Browse Files", "Clear All", "Task", "Advanced",
   "Temperature", "Transcribe", "Copy", "Export .txt") and the "Storage" section.
 
-**Renaming any of these in `ContentView` builds green and passes tests while leaving the help book
-misdescribing the UI.** The partial guard against that, and its two known holes, is described in
+These are hand-written, but not unguarded: `labelsAppearInBothUIAndHelp` requires each tabled label
+to render **both** as a real control and somewhere in the help copy, so renaming one on either side
+trips it. **The keyboard shortcuts are the genuinely unguarded part** — they are not in that table
+and nothing checks them, so a rebind leaves the help book silently wrong. One tabled label
+("Transcribe") is only partially covered, and "Storage" is not in that table at all; see
 [testing.md#the-help-book-is-wiring-protected-not-wording-protected](testing.md#the-help-book-is-wiring-protected-not-wording-protected).
 
 ---

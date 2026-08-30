@@ -4,18 +4,11 @@ import ViewInspector
 
 @testable import Speech2Text
 
-// View-render tests for the in-app About panel (AboutView). Like the ContentView and HelpView
-// suites, all inspection is static: each assertion builds a fresh view and reads its rendered
-// body, so no ViewHosting / XCTest machinery is needed and the suite stays pure Swift Testing.
-// AboutView is a plain VStack (not a NavigationSplitView), so ViewInspector can traverse it
-// directly.
+// View-render tests for the About panel, pinning its fixed copy. Statically inspected; `AboutView`
+// is a plain VStack, so ViewInspector traverses it directly.
 //
-// These tests pin the About panel's *content* — the fixed copy the panel presents (app name,
-// privacy description, copyright, license, open-source acknowledgements, and the repository
-// link). They intentionally do NOT assert the app version string: AboutView reads it from
-// `Bundle.main` at runtime, which resolves to the test host's bundle rather than the app's, so
-// any version assertion would be environment-dependent and flaky. The version is left to
-// manual/visual verification of the real app instead — this is the one deliberate gap.
+// They deliberately do NOT assert the version string — it resolves to the test host's bundle.
+// Why: docs/testing.md#the-about-panel-version-gap
 @MainActor
 @Suite("AboutView")
 struct AboutViewTests {

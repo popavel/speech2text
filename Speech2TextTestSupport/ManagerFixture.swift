@@ -2,30 +2,23 @@ import Foundation
 
 @testable import Speech2Text
 
-// Test-only helper shared across the unit-test targets. This file is compiled into both
-// `Speech2TextTests` and `Speech2TextIntegrationTests` (see project.yml), so both targets
-// build their managers the same hermetic way.
+// Test-only helper compiled into both unit-test targets (see project.yml), so both build their
+// managers the same hermetic way.
 
-/// Vends a `TranscriptionManager` backed by a throwaway `UserDefaults` domain and removes that
-/// domain when the fixture is released (in `deinit`). Keeps settings-persistence tests hermetic —
-/// the app-hosted test process resolves `.standard` to the app's real `com.speech2text.app` domain,
-/// so persisting there would read/clobber the developer's actual settings. Hold the fixture for as
-/// long as any manager built from it is in use: a per-test fixture is released after its test and
-/// leaves no orphan `s2t.test.*` plist, whereas one kept for the whole process (a `static let`) is
-/// released only at exit and so may leave a single ephemeral domain — still never `.standard`.
+/// Vends a `TranscriptionManager` backed by a throwaway `UserDefaults` domain, removed in `deinit`.
+/// Hold the fixture for as long as any manager built from it is in use.
 ///
-/// `@unchecked Sendable`: storage is immutable (`let`) and `UserDefaults` is thread-safe, so a
-/// single fixture can be shared safely (e.g. a `static let` across a serialized suite). It stays
-/// nonisolated — not `@MainActor` — so `deinit` may touch the non-`Sendable` store; only
-/// `makeManager()` needs the main actor, to satisfy `TranscriptionManager`'s `@MainActor` init.
+/// `@unchecked Sendable` because its storage is immutable and `UserDefaults` is thread-safe;
+/// nonisolated so `deinit` may touch the non-`Sendable` store.
+/// Why: docs/testing.md#hermetic-di
 final class ManagerFixture: @unchecked Sendable {
     /// The isolated store. Exposed so a test can seed a raw/invalid value before building a manager.
     let defaults: UserDefaults
     private let suiteName: String
 
-    /// The keys currently persisted in this fixture's isolated domain — exactly what the manager's
-    /// `didSet` writers produced, since the domain starts empty. Lets a test assert the persisted set
-    /// equals `Keys.all` (and that the wipe empties it) without a hand-maintained key list.
+    /// The keys currently persisted in this fixture's domain — exactly what the manager's `didSet`
+    /// writers produced, since the domain starts empty. Lets a test assert the persisted set equals
+    /// `Keys.all` without a hand-maintained list.
     var persistedKeys: Set<String> {
         Set((defaults.persistentDomain(forName: suiteName) ?? [:]).keys)
     }

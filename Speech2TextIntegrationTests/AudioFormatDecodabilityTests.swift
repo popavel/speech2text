@@ -4,25 +4,10 @@ import Testing
 
 @testable import Speech2Text
 
-// Proves every audio format the app can synthesize at runtime actually decodes
-// through the *production* read path, end-to-end and hermetically (no model, no
-// network). WhisperKit's `AudioProcessor.loadAudio(fromPath:)` opens files with
-// `AVAudioFile(forReading:commonFormat: .pcmFormatFloat32, interleaved: false)`,
-// so the oracle below mirrors that exact call: if it yields PCM frames, the app
-// can transcribe the format.
-//
-// This deliberately covers a gap the static `SupportedExtensionsTests` cannot —
-// `UTType` conformance says a format *registers* as audio, not that Apple's
-// codecs can actually decode it. It also gives `wav` a real decode assertion it
-// previously lacked (the existing extraction suite only tests wav *routing*).
-//
-// mp3/aac/ogg are covered via tiny checked-in fixtures (Fixtures/tone.{mp3,aac,
-// ogg}) rather than runtime synthesis: Apple has no mp3 or Ogg encoder, and raw
-// ADTS .aac isn't reliably writable via AVAudioFile — yet AVAudioFile *decodes*
-// all three (verified on macOS 26). wma and avi were *removed* from the supported
-// lists because the app's stack can't decode them (AVAudioFile/AVURLAsset reject
-// them outright); `everyAdvertisedAudioFormatDecodes` below now asserts every
-// still-advertised format really is decodable, so a regression can't slip back in.
+// Proves every advertised audio format actually decodes through the *production* read path,
+// hermetically (no model, no network). The oracle mirrors WhisperKit's own `AVAudioFile` call, so
+// if it yields PCM frames the app can transcribe the format.
+// Why: docs/testing.md#the-decodability-oracle
 
 @Suite("Audio format decodability (integration)")
 struct AudioFormatDecodabilityTests {

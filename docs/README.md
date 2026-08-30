@@ -7,10 +7,11 @@ Linked from the root [README.md](../README.md#documentation).
 
 > **Migration in progress.** This folder was written first, from the comments it consolidates, so
 > the prose could be reviewed against its source side by side. `Speech2Text/` has since been
-> trimmed to one-sentence summaries plus `Why:` pointers, and the tripwires in `project.yml`,
-> `feature.yml`, `main.yml` and `release.yml` are in place. Still to come: the test targets, the rest of
-> `.github/workflows/`, `.claude/`, `Info.plist`, and slimming `AGENTS.md` — those still carry
-> their original long-form comments.
+> trimmed, as have the heaviest files in the three test targets and the shared fixtures, and the
+> tripwires in `project.yml`, `feature.yml`, `main.yml` and `release.yml` are in place. Still to
+> come: `SettingsPersistenceTests`, `DecodingParametersTests`, `TranscriptionManagerTests`,
+> `AudioExtractionIntegrationTests` and `MediaFixtures`; the rest of `.github/workflows/`;
+> `.claude/`; `Info.plist`; and slimming `AGENTS.md`.
 
 [AGENTS.md](../AGENTS.md) is the *contract* — the commands, the workflow, and the prohibitions an
 agent must follow before it acts. This folder is the *reference* — what a maintainer reads when
@@ -91,7 +92,8 @@ tripwire.
 ```
 
 - Starts with `DO NOT`, `NEVER`, or `MUST`, so `grep -rn 'DO NOT\|NEVER\|MUST '` finds every one.
-- **Two lines maximum.** Prohibition plus consequence. No reasoning — that is what the anchor is for.
+- **Two lines of prose maximum**, plus the `Why:` line — prohibition and consequence, nothing more.
+  The reasoning belongs at the anchor.
 - Placed **immediately above the tempting token**, not in the enclosing type's doc comment.
 
 ## Tripwire index
@@ -100,13 +102,31 @@ Every site that must keep an imperative warning in the code, the prohibition it 
 its argument lives. This doubles as the acceptance criterion for the migration: nothing load-bearing
 has been lost if every row is present at its site and its anchor holds the full reasoning.
 
-Every one is findable with `grep -rn 'DO NOT\|NEVER\|MUST '` — that keyword set is the convention,
+Every one is findable with a keyword sweep over the code — that keyword set is the convention,
 so a warning phrased any other way is invisible to the sweep and does not count. **Rows marked
 _(pending)_ are not in the tree yet**: their file has not been trimmed. Drop the marker as each
-lands. The raw sweep returns a few more hits than there are unmarked rows: two rows cover two sites
-each (the pair of KVO handlers, and the `main.yml`/`release.yml` pair), and the keywords also occur
-incidentally in ordinary prose, so read the sweep as a superset to audit rather than a count to
-match.
+lands. The raw sweep returns slightly more hits than there are unmarked rows, and the difference is
+exactly accountable:
+
+- unmarked rows in the table below — **33**
+- plus 1: the "both KVO handlers" row covers two sites in the updater
+- plus 1: the main/release workflow row covers two sites
+- plus 1: an incidental "MUST be" in review-workflow prose, not a tripwire
+- **sweep total — 36**
+
+The sweep is over code, not prose:
+
+```bash
+grep -rn 'DO NOT\|NEVER \|MUST ' \
+  --include='*.swift' --include='*.yml' --include='*.sh' --include='*.plist' . \
+  | grep -v DerivedData
+```
+
+Markdown is excluded deliberately — this page states the keywords several times itself, and would
+otherwise inflate its own count.
+
+If those numbers stop reconciling, either a tripwire was added without an index row or one was
+deleted from the tree.
 
 | Site | Prohibition | Anchor |
 | --- | --- | --- |
@@ -125,6 +145,7 @@ match.
 | `TranscriptionManager.swift` — `loadModel` | Release the old engine before loading the new one | [concurrency.md#engine-release-ordering](concurrency.md#engine-release-ordering) |
 | `TranscriptionManager.swift` — `wipeDirectory` | `deletion` must be set before the first suspension | [concurrency.md#the-removal-contract](concurrency.md#the-removal-contract) |
 | `ContentView.swift` — `refreshSize` | Don't drop `measureGeneration` ownership | [concurrency.md#cache-walk-ownership](concurrency.md#cache-walk-ownership) |
+| `ContentView.swift` — `performRemoval`'s `isMeasuring = false` | Don't drop it as redundant | [concurrency.md#cache-walk-ownership](concurrency.md#cache-walk-ownership) |
 | `ContentView.swift` — `LanguagePicker.onSubmit` | A blank query must not select `filtered.first` | [architecture.md#the-language-picker](architecture.md#the-language-picker) |
 | `TranscriptionManager.swift` — `removeAllAppData` | Clear via `UserDefaults`, never delete the plist | [concurrency.md#remove-all-app-data](concurrency.md#remove-all-app-data) |
 | `Speech2TextApp.swift` — the main scene | `Window`, not `WindowGroup` | [architecture.md#window-not-windowgroup](architecture.md#window-not-windowgroup) |
@@ -135,10 +156,10 @@ match.
 | `TranscriptionManager.swift` — the UI-test stub | Audit it if another `.completed` invariant is added | [testing.md#the-seam-itself](testing.md#the-seam-itself) |
 | `feature.yml` — the `on:` block | Don't add a `pull_request:` trigger | [automation.md#push-only-deliberately-no-pull_request-trigger](automation.md#push-only-deliberately-no-pull_request-trigger) |
 | `ContentView.swift` — `performRemoval`'s `removal` | Must stay `@MainActor` | [concurrency.md#se-0338-and-the-actor-hops](concurrency.md#se-0338-and-the-actor-hops) |
-| `Speech2TextUITests.swift` — `launchApp()` _(pending)_ | The literal must equal the app-side constant | [testing.md#the-cross-target-contract](testing.md#the-cross-target-contract) |
-| `UpdaterTests.swift` — `postponeHookSelectorIsWired` _(pending)_ | Don't "fix" it to `#selector` | [testing.md#selector-tripwire](testing.md#selector-tripwire) |
-| `UpdaterTests.swift` — file header _(pending)_ | Never construct a real `SPUUpdater` | [testing.md#never-construct-spuupdater](testing.md#never-construct-spuupdater) |
-| `StallWatchdogTests.swift` — timing margins _(pending)_ | Widen the budget, never delete the test | [testing.md#the-wall-clock-exception](testing.md#the-wall-clock-exception) |
+| `Speech2TextUITests.swift` — `launchApp()` | The literal must equal the app-side constant | [testing.md#the-cross-target-contract](testing.md#the-cross-target-contract) |
+| `UpdaterTests.swift` — `postponeHookSelectorIsWired` | Don't "fix" it to `#selector` | [testing.md#selector-tripwire](testing.md#selector-tripwire) |
+| `UpdaterTests.swift` — file header | Never construct a real `SPUUpdater` | [testing.md#never-construct-spuupdater](testing.md#never-construct-spuupdater) |
+| `StallWatchdogTests.swift` — timing margins | Widen the budget, never delete the test | [testing.md#the-flake-budget](testing.md#the-flake-budget) |
 | `project.yml` — the Sparkle package | Never re-add a tarball download | [distribution.md#the-appcast](distribution.md#the-appcast) |
 | `publish-release.yml` — `generate_appcast` | Never re-add a tarball download | [distribution.md#the-appcast](distribution.md#the-appcast) |
 | `main.yml` / `release.yml` — the commented `pull_request:` block | Re-check the concurrency key before enabling | [automation.md#push-only-deliberately-no-pull_request-trigger](automation.md#push-only-deliberately-no-pull_request-trigger) |

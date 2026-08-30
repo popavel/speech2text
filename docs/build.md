@@ -111,8 +111,9 @@ never pulls them in; run them explicitly with `-scheme Speech2TextUITests test`.
 `publish-release.yml` alone, so local development and every `CODE_SIGNING_ALLOWED=NO` CI build stay
 untouched by the release configuration.
 
-UI tests are the one exception to `CODE_SIGNING_ALLOWED=NO` (an unsigned test runner is killed
-before it can attach) — see
+UI tests are the one exception among *test* jobs to `CODE_SIGNING_ALLOWED=NO` (an unsigned test
+runner is killed before it can attach); `publish-release.yml` also builds signed, with a Developer
+ID identity — see
 [automation.md#integration-and-ui-jobs](automation.md#integration-and-ui-jobs).
 
 ---

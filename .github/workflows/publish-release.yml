@@ -490,6 +490,7 @@ jobs:
       # artifact the app embeds, integrity-checked. NEVER re-download it — Sparkle's release
       # tarballs are ad-hoc signed, so a download can't be verified and would hand a signing
       # secret to unauthenticated code.
+      # Why: docs/distribution.md#the-appcast
       #
       # KNOWN LIMITATION — the feed carries exactly ONE item. `artifacts/` is fresh every run and
       # the previous appcast is never fetched, so each release regenerates a single-entry feed.

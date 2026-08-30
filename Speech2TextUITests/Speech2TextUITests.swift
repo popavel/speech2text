@@ -1,18 +1,9 @@
 import XCTest
 
-/// End-to-end UI automation that launches the real app and drives its controls.
-///
-/// XCUIApplication lives in XCTest, so this target is the deliberate exception
-/// to the repo's Swift Testing convention (documented in AGENTS.md).
-///
-/// These tests rely on the `#if DEBUG` launch seam in TranscriptionManager:
-/// `-uiTesting` plus `UITEST_PRELOAD_FILES` / `UITEST_STUB_RESULT` seed state
-/// without a file dialog, drag-and-drop, or loading WhisperKit. They never tap
-/// Transcribe — that would download a model.
-///
-/// `@MainActor` on the class keeps XCUIApplication's main-actor-isolated members
-/// reachable; values are read into locals before XCTAssert so they aren't touched
-/// from XCTAssert's nonisolated autoclosure (Swift 6 strict concurrency).
+/// End-to-end UI automation that launches the real app and drives its controls. The deliberate
+/// XCTest exception to the repo's Swift Testing convention, driving the `#if DEBUG` launch seam.
+/// Never taps Transcribe — that would download a model.
+/// Why: docs/testing.md#the-xctest-exception
 @MainActor
 final class Speech2TextUITests: XCTestCase {
 
@@ -21,22 +12,13 @@ final class Speech2TextUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// `async` on purpose. The `@MainActor` on this class does NOT reach an override of a
-    /// `nonisolated` superclass method — an override inherits the isolation of the declaration it
-    /// overrides, and `XCTestCase.tearDown()` is nonisolated. So a plain sync override cannot touch
-    /// XCUIApplication's main-actor-isolated members under Swift 6 strict concurrency. The async
-    /// variant can hop explicitly. (`tearDown() async throws` runs last in XCTest's teardown
-    /// sequence rather than first, which is immaterial here — nothing else tears down.)
+    /// `async` on purpose: an override inherits the isolation of the declaration it overrides, and
+    /// `XCTestCase.tearDown()` is nonisolated, so a sync override couldn't touch main-actor members.
+    /// Why: docs/testing.md#the-xctest-exception
     override func tearDown() async throws {
-        // Terminate the app after every test — pass or fail. The help book is a second, restorable
-        // `Window`; if a test opens it and then fails before closing it (continueAfterFailure = false
-        // aborts at the first failed assertion), the window would otherwise be left open and could be
-        // restored into the next test, which assumes a single main window. Terminating here kills any
-        // such window regardless of the failure path. (`terminate()` is a no-op if nothing is running,
-        // and abnormal termination doesn't persist window state — so nothing is restored on relaunch.)
-        // Suppressing restoration via `-NSQuitAlwaysKeepsWindows NO` / `-ApplePersistenceIgnoreState`
-        // launch args was tried instead, but those prevent this SwiftUI app's main window from
-        // appearing at all.
+        // Terminate after every test, pass or fail: the help book is a second window that a failed
+        // test can leave open for the next one, which assumes a single main window.
+        // Why: docs/testing.md#the-xctest-exception
         await MainActor.run { XCUIApplication().terminate() }
         try await super.tearDown()
     }
@@ -60,17 +42,10 @@ final class Speech2TextUITests: XCTestCase {
         stubResult: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
-        // Sentinel consumed by TranscriptionManager.applyUITestSeamIfPresent() and by
-        // SparkleUpdaterModel.shouldStartUpdater(). This target links no app symbols, so the
-        // string is spelled out rather than shared: its value must equal
-        // TranscriptionManager.uiTestingLaunchArgument. That contract is guarded in ONE
-        // direction only — the unit tripwire `uiTestingLaunchArgumentIsTheCrossTargetContract`
-        // pins the app-side constant to this value, but nothing observes this file. Change the
-        // literal here and the whole unit suite stays green while the seam quietly stops
-        // applying; only a UI-test run catches it, and it clobbers real app preferences on the
-        // way (with the seam inert, the app persists to `.standard`, not the volatile suite).
-        // (Window-restoration hygiene for the help book's second window is handled by
-        // terminating the app in tearDown — see there.)
+        // MUST equal `TranscriptionManager.uiTestingLaunchArgument` — nothing observes this file,
+        // so changing it leaves the unit suite green while the seam goes inert and clobbers real
+        // app preferences.
+        // Why: docs/testing.md#the-cross-target-contract
         app.launchArguments = ["-uiTesting"]
         if !preloadFiles.isEmpty {
             app.launchEnvironment["UITEST_PRELOAD_FILES"] = preloadFiles.joined(separator: "\n")

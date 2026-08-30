@@ -14,9 +14,10 @@ because nothing has to be built without it. (An earlier, unmerged experiment car
 dual-channel setup; going App-Store-free is what makes all that scaffolding unnecessary. Don't
 reintroduce it without a channel that needs it.)
 
-The Sparkle seam and the release pipeline are one file on purpose: the same handful of facts used
-to be written out in `Updater.swift`, `AGENTS.md`, `publish-release.yml`, `Info.plist` **and**
-`.github/workflows/README.md`, and splitting them re-opens that seam.
+The Sparkle seam and the release pipeline are one file on purpose: the same handful of facts were
+written out in `Updater.swift`, `AGENTS.md`, `publish-release.yml`, `Info.plist` **and**
+`.github/workflows/README.md`, and splitting them re-opens that seam. (`AGENTS.md` and the workflows
+README still carry their copies until the migration finishes — see [README.md](README.md).)
 
 ---
 
@@ -293,9 +294,10 @@ does anything at all in Release.
 `UpdaterTests.swift` can test **both** answers — including the one combination that ships — from a
 test run that is itself always Debug. All three inputs are injectable for the same reason.
 
-`autoChecksDefaultsKey` and `testEnvironmentMarkers` are named constants so the gate and the tests
-share one spelling and can't drift — a fork would leave the tests snapshotting a key the model no
-longer touches, passing vacuously.
+`testEnvironmentMarkers` is a named constant so the gate and its parameterized tests share one
+list; `autoChecksDefaultsKey` is named so the *gated Info.plist seed* in the designated initializer
+and the gate suite's snapshot/restore share one spelling. Either fork would leave the tests
+exercising a key the model no longer touches, passing vacuously.
 
 `CheckForUpdatesCommand` is a dedicated command `View` (Sparkle's documented menu-item pattern):
 SwiftUI Observation re-evaluates its body when the observable `canCheckForUpdates` changes, which is

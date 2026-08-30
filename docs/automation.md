@@ -52,9 +52,11 @@ All three pipelines are push-only for this reason. `main.yml`/`release.yml` keep
 forbidding the trigger outright — enabling it on `main.yml` is in fact the natural fix for the gap
 below, and what must not be repeated is enabling it *without* re-checking the key.
 
-**A gap worth naming:** coverage comes from `feature.yml`, which triggers only on `feature/**` and
-`chore/**`. A PR into `main` from a branch with any other prefix gets no required-context run at
-all — `main.yml` fires only on pushes *to* `main`, i.e. after the merge.
+**A gap worth naming:** the required contexts come from the three push-triggered pipelines, which
+between them cover `feature/**`, `chore/**` and `release/**` — all three call the same reusable jobs
+under the same ids, so they emit the same check names. A PR into `main` from a branch with **any
+other prefix** gets no required-context run at all: `main.yml` fires only on pushes *to* `main`,
+i.e. after the merge.
 
 ---
 
