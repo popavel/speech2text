@@ -167,6 +167,7 @@ Speech2Text/
 ├── ContentView.swift           # SwiftUI UI (incl. SettingsView)
 ├── TranscriptionManager.swift  # WhisperKit integration & audio extraction
 ├── Updater.swift               # Sparkle auto-update seam
+├── ModelDownloadWatchdog.swift # Stall watchdog bounding model download/load
 ├── AboutView.swift             # About panel window
 ├── HelpView.swift              # In-app help book (incl. the uninstall guide)
 └── speech2text.icon            # App icon (Icon Composer package)
@@ -174,19 +175,38 @@ project.yml                     # XcodeGen config — targets, packages, version
 Info.plist                      # Bundle keys + Sparkle SU* keys
 Speech2Text.entitlements        # Not sandboxed
 .github/workflows/              # CI + the release pipeline
+docs/                           # Design rationale — see below
 ```
+
+## Documentation
+
+Deep rationale for how and why the code is shaped the way it is lives in [docs/](docs/):
+
+| Doc | Covers |
+| --- | --- |
+| [docs/README.md](docs/README.md) | Index, the comment convention the code follows, and the tripwire list |
+| [docs/architecture.md](docs/architecture.md) | State flow, the model cache, scenes and menu commands, the help book's derived facts |
+| [docs/concurrency.md](docs/concurrency.md) | The stall watchdog, the model-loading bounds, the removal contract, Swift 6 actor hops |
+| [docs/distribution.md](docs/distribution.md) | The Sparkle seam and the release pipeline, including the release runbook |
+| [docs/testing.md](docs/testing.md) | Test conventions, the XCUITest exception, hermetic DI, per-suite charters |
+| [docs/automation.md](docs/automation.md) | CI workflows, the Claude bot loops, the commit guard, and their known limitations |
+| [docs/build.md](docs/build.md) | XcodeGen decisions, platform constraints, `Info.plist` keys |
+
+[AGENTS.md](AGENTS.md) is the contract for AI coding assistants — commands, workflow and
+prohibitions; `docs/` is the reference behind it.
 
 ## CI
 
 GitHub Actions workflows live in `.github/workflows/`:
 
 - `release.yml` — runs on `release/**` branches
-- `main.yml` — builds & tests on pushes / PRs to `main`
-- `feature.yml` — runs on `feature/**` branches
+- `main.yml` — builds & tests on pushes to `main` (push-only; see [docs/automation.md](docs/automation.md#push-only-deliberately-no-pull_request-trigger))
+- `feature.yml` — runs on `feature/**` and `chore/**` branches
 - `publish-release.yml` — on a `vX.Y.Z` tag: notarized DMG + ZIP + Sparkle appcast → GitHub Release
 
-The first three pin Xcode 26.4.1 on a `macos-26` runner and use the same build/test steps;
-`publish-release.yml` gates on that same build/test job before it signs anything.
+The first three are thin callers of the shared `build-and-test.yml` job (Xcode 26.4.1 on a
+`macos-26` runner), and each also calls the integration and UI-test jobs once that is green;
+`publish-release.yml` gates on the same build/test job before it signs anything.
 
 See [.github/workflows/README.md](.github/workflows/README.md) for a per-workflow overview
 (including the Claude automation) and its known limitations, and

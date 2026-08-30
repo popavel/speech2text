@@ -120,8 +120,10 @@ pieces run on GitHub's runners.
   issue (mentioning `@claude`) if upstream drift broke the build. (A new *major* of any dependency
   isn't picked up by `from:` — that needs a manual bump.) Because both are raised with the Actions
   `GITHUB_TOKEN`, the PR carries no status checks of its own (the build/test ran in the drift job)
-  and the issue's `@claude` mention isn't auto-triggered — a maintainer re-runs CI / re-invokes
-  `@claude`.
+  and the issue's `@claude` mention isn't auto-triggered. **A `workflow_dispatch` does not reliably
+  attach to the PR head** — unblock the checks by pushing one *human* commit to the branch
+  (`--allow-empty` is enough), which fires `feature.yml`'s push trigger on the new head SHA; and
+  re-invoke `@claude` by hand on the issue.
 
 ## Architecture
 
@@ -139,7 +141,7 @@ A handful of Swift files do all the real work; the UI is intentionally thin.
 
 **WhisperKit dependency** in `project.yml` tracks the latest release via `from: "1.0.0"` (SwiftPM up-to-next-major — newest `1.x` release, never a breaking `2.0`). Major bumps are manual; the weekly drift check covers `1.x` drift. Be aware when debugging upstream API drift.
 
-> **A green drift PR does not prove model loading still works.** `loadModel(named:)` reassembles what `WhisperKit(model:downloadBase:)` does internally (download → `modelFolder` → `loadModels()`), and *nothing in the default test run constructs a WhisperKit* — that path lives only in the opt-in `Speech2TextIntegrationTests`, which the drift job doesn't run. A 1.x release that changes those semantics would sail through CI and fail on first model load for every user. So when reviewing a WhisperKit bump (drift PR or manual), run the end-to-end suite yourself; note the gate needs the `TEST_RUNNER_`-prefixed variable as a real environment variable — passing it as an `xcodebuild` build setting silently skips the suite:
+> **`loadModel(named:)` reassembles what `WhisperKit(model:downloadBase:)` does internally** (download → `modelFolder` → `loadModels()`), and *nothing in the default test run constructs a WhisperKit* — that path lives only in the opt-in `Speech2TextIntegrationTests`. A 1.x release that changed those semantics would compile cleanly and fail on first model load for every user. Two jobs close that gap: the weekly drift job un-gates the suite itself (`TEST_RUNNER_RUN_WHISPERKIT_TESTS=1`), and `integration-whisperkit.yml` runs it on every feature/main/release pipeline — so a manual bump pushed to a branch gets the same end-to-end evidence a drift PR does. What no job does is *propose* a major bump (`from:` never crosses a major), and nothing asserts the WhisperKit internals `withStallWatchdog` is built on. On any bump, re-check those (docs/concurrency.md, "Upstream facts") and run the suite yourself if you want it locally — note the gate needs the `TEST_RUNNER_`-prefixed variable as a real environment variable, since passing it as an `xcodebuild` build setting silently skips the suite:
 >
 > ```bash
 > TEST_RUNNER_RUN_WHISPERKIT_TESTS=1 xcodebuild -project Speech2Text.xcodeproj \
@@ -154,7 +156,9 @@ Speech2Text ships through **one channel**: a direct download from
 [GitHub Releases](https://github.com/popavel/speech2text/releases) and the project website,
 Developer ID-signed, hardened-runtime, notarized and stapled, self-updating via **Sparkle 2**
 against an EdDSA-signed appcast. There is deliberately no Mac App Store build, and therefore no
-second app target, no sandbox entitlements, and no `SPARKLE_ENABLED` compile condition — Sparkle
+second app target, no sandboxing (`Speech2Text.entitlements` sets `com.apple.security.app-sandbox`
+to `<false/>`; the publish workflow reads that key off the product and fails only on an explicit
+`true`), and no `SPARKLE_ENABLED` compile condition — Sparkle
 compiles unconditionally because nothing has to be built without it. (An earlier, unmerged
 experiment carried a dual-channel setup; going App-Store-free is what makes all that scaffolding
 unnecessary. Don't reintroduce it without a channel that needs it.)
@@ -263,13 +267,14 @@ Things that keep this sane — don't undo them:
   appcast); the DMG goes to `dist/` and the dSYMs to `dsyms/`.
 
 **Release runbook:** bump both versions in `project.yml` → `/precommit` → PR → merge to `main` →
-`git tag vX.Y.Z && git push origin vX.Y.Z` → `publish-release.yml` runs (preflight, build+test
-gate, sign, verify product, notarize, staple, zip, DMG, appcast, draft release, publish) →
+`git tag vX.Y.Z && git push origin vX.Y.Z` → `publish-release.yml` runs (build+test gate as a
+separate `needs:` job first, then preflight, xcodegen, cert import, Release build, verify product,
+notarize, staple, zip, DMG, dSYMs, appcast, draft release, publish) →
 spot-check `curl -sL https://github.com/popavel/speech2text/releases/latest/download/appcast.xml`.
 The workflow uploads assets onto a *draft* release and flips it to published only once complete
 (so the `latest` feed never sees a half-uploaded release) — but **never leave a release
 draft/prerelease**: the `latest` redirect skips those and installed apps silently stop seeing
-updates. A final `always()` step alarms if that happens.
+updates. A late step guarded by `always() && steps.create_draft.outcome != 'skipped'` alarms if that happens.
 
 **One-time secrets** (all already set on the repo): `SPARKLE_ED_PRIVATE_KEY` (from Sparkle's
 `generate_keys -x`; the public half is `SUPublicEDKey` in [Info.plist](Info.plist) — losing the

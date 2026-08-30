@@ -54,8 +54,9 @@ struct StallWatchdogTests {
     private static let drain: Duration = .seconds(2)
 
     /// The opposite case, for `drainIsBounded` alone: it must be comfortably SHORTER than that
-    /// test's deliberately uncancellable 600 ms operation, or the drain would end early on
-    /// `didFinish` and the bound would go untested.
+    /// test's deliberately uncancellable operation — a detached 600-SECOND sleep, i.e. one that
+    /// effectively never finishes — or the drain would end early on `didFinish` and the bound
+    /// would go untested.
     private static let shortDrain: Duration = .milliseconds(200)
 
     @Test("An operation that finishes returns its value")

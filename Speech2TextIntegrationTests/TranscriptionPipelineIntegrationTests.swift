@@ -18,10 +18,11 @@ private let whisperKitTestsEnabled: Bool = {
 @MainActor
 @Suite(
     "Transcription pipeline (integration)",
-    // Run serially: every test loads a WhisperKit model into the same shared
-    // ~/Documents/huggingface cache, so concurrent first-run downloads would
-    // race on the same files. (parallelizable="NO" in the scheme only governs
-    // XCTest's multi-process runner, not Swift Testing's in-process parallelism.)
+    // Run serially: every test loads a WhisperKit model into the same shared model
+    // cache (`TranscriptionManager.modelCacheDirectory`, NOT WhisperKit's default
+    // ~/Documents/huggingface — `downloadBase` overrides it), so concurrent first-run
+    // downloads would race on the same files. (parallelizable="NO" in the scheme only
+    // governs XCTest's multi-process runner, not Swift Testing's in-process parallelism.)
     .serialized,
     .disabled(
         if: !whisperKitTestsEnabled,
