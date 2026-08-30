@@ -181,7 +181,14 @@ struct SparkleUpdaterLiveWiringTests {
         //
         // Constructing the delegate is hermetically safe: `init(isBusy:)` takes only a closure, so
         // no `SPUUpdater`/`SUHost` over the shared defaults domain comes into existence.
-        let selector = Selector("updater:shouldPostponeRelaunchForUpdate:untilInvokingBlock:")
+        //
+        // The name is spelled out as a runtime string ON PURPOSE — do NOT "fix" this to
+        // `#selector(UpdaterDelegate.updater(_:shouldPostponeRelaunchForUpdate:untilInvokingBlock:))`.
+        // That form is *derived from* the `@objc` pin under test, so it would keep passing after the
+        // pin was deleted or mistyped, which is the entire failure this test exists to catch.
+        // `NSSelectorFromString` rather than `Selector(_:)` because the latter draws a
+        // "use '#selector' instead" warning for exactly the literal we need to keep.
+        let selector = NSSelectorFromString("updater:shouldPostponeRelaunchForUpdate:untilInvokingBlock:")
 
         #expect(UpdaterDelegate(isBusy: { false }).responds(to: selector))
     }
